@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DAM Crawler</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h1>Aprimo DAM Crawler</h1>
+    <div id="status" class="status">Checking page…</div>
+
+    <div class="grid">
+      <button id="startBtn">Start / Resume</button>
+      <button id="pauseBtn">Pause</button>
+      <button id="scanBtn">Scan Visible</button>
+      <button id="exportBtn">Export JSON</button>
+      <button id="exportCsvBtn">Export CSV</button>
+      <button id="resetBtn" class="danger">Reset State</button>
+    </div>
+
+    <div class="stats">
+      <div><span>Assets:</span> <strong id="assetCount">0</strong></div>
+      <div><span>Detail Done:</span> <strong id="detailDone">0</strong></div>
+      <div><span>Errors:</span> <strong id="detailErrors">0</strong></div>
+      <div><span>Running:</span> <strong id="running">false</strong></div>
+    </div>
+
+    <label class="row">
+      <input id="downloadPreviews" type="checkbox" />
+      <span>Download preview images (optional)</span>
+    </label>
+
+    <div class="note">
+      Resume is checkpointed in <code>chrome.storage.local</code>. If auth expires, log back in and click Start / Resume.
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
