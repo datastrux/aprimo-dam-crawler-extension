@@ -4,6 +4,7 @@
   const ASSET_DB_NAME = 'damCrawlerAssets_v1';
   const ASSET_DB_VERSION = 1;
   const ASSET_STORE = 'assets';
+  const EXCLUDED_FILE_TYPES = new Set(['eps', 'svg']);
 
   const runtime = {
     running: false,
@@ -106,6 +107,16 @@
     await withAssetStore('readwrite', store => idbRequest(store.clear()));
   }
 
+  async function deleteAssetIdsFromDb(itemIds) {
+    if (!itemIds?.length) return;
+    await withAssetStore('readwrite', store => {
+      for (const itemId of itemIds) {
+        if (!itemId) continue;
+        store.delete(itemId);
+      }
+    });
+  }
+
   function markAssetDirty(itemId) {
     if (!itemId) return;
     runtime.dirtyAssetIds.add(itemId);
@@ -198,6 +209,27 @@
     return Array.from(new Set((values || []).filter(v => typeof v === 'string' && v.trim())));
   }
 
+  function normalizeFileType(fileType) {
+    if (fileType == null) return null;
+    let normalized = String(fileType).trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized.startsWith('.')) normalized = normalized.slice(1);
+    if (normalized.includes('/')) normalized = normalized.split('/').pop() || normalized;
+    if (normalized.includes('+')) normalized = normalized.split('+')[0] || normalized;
+    if (normalized.includes(';')) normalized = normalized.split(';')[0].trim();
+    return normalized || null;
+  }
+
+  function isExcludedAssetType(fileType) {
+    const normalized = normalizeFileType(fileType);
+    return !!(normalized && EXCLUDED_FILE_TYPES.has(normalized));
+  }
+
+  function isExcludedAsset(asset) {
+    if (!asset || typeof asset !== 'object') return false;
+    return isExcludedAssetType(asset.fileType || inferFileType(asset.fileName, asset.contentTypeLabel));
+  }
+
   function normalizeImportedAsset(raw, fallbackSourceKey) {
     if (!raw || typeof raw !== 'object') return null;
     const itemUrl = raw.itemUrl || raw.itemURL || raw.url || raw.assetUrl || raw['Asset item URL'] || null;
@@ -214,19 +246,23 @@
       raw.downloadedPreview ?? raw.previewDownloaded ?? raw['Preview Downloaded']
     );
 
+    const fileName = raw.fileName || raw.filename || raw['File name'] || null;
+    const contentTypeLabel = raw.contentTypeLabel || raw.contentType || raw['Content Type'] || null;
+    const fileType = normalizeFileType(raw.fileType || raw['File type'] || raw['File Type']) || inferFileType(fileName, contentTypeLabel);
+
     const sourceKeys = uniqueStrings([...(raw.sourceKeys || []), fallbackSourceKey]);
     return {
       itemId,
-      fileName: raw.fileName || raw.filename || raw['File name'] || null,
+      fileName,
       itemUrl,
       previewUrl: raw.previewUrl || raw.previewURL || raw['Preview URL'] || null,
-      contentTypeLabel: raw.contentTypeLabel || raw.contentType || raw['Content Type'] || null,
+      contentTypeLabel,
       status: raw.status || raw['Status'] || null,
       expirationDate: normalizeDash(raw.expirationDate || raw['Expiration date'] || raw['Expiration Date']),
       usageRights: raw.usageRights || raw['Usage rights'] || raw['Usage Rights'] || null,
       publicUrl: raw.publicUrl || raw.publicURL || raw['Public URL'] || null,
       fileSize: raw.fileSize || raw['File size'] || raw['File Size'] || null,
-      fileType: raw.fileType || raw['File type'] || raw['File Type'] || inferFileType(raw.fileName || raw.filename || raw['File name'], raw.contentTypeLabel || raw.contentType || raw['Content Type']),
+      fileType,
       detailFetched: inferredDetailFetched,
       detailFetchStatus: raw.detailFetchStatus ?? null,
       detailError: raw.detailError || null,
@@ -356,6 +392,10 @@
         skipped++;
         continue;
       }
+      if (isExcludedAsset(incoming)) {
+        skipped++;
+        continue;
+      }
 
       const existing = state.assets[incoming.itemId];
       if (!existing) {
@@ -384,6 +424,30 @@
     rebuildQueues({ requeueIncomplete: false, clearErrors: false });
     await saveCheckpoint();
     return { added, updated, skipped };
+  }
+
+  async function purgeExcludedAssets() {
+    const excludedIds = Object.values(state.assets || {})
+      .filter(asset => asset?.itemId && isExcludedAsset(asset))
+      .map(asset => asset.itemId);
+
+    if (!excludedIds.length) return { purged: 0 };
+
+    const excludedIdSet = new Set(excludedIds);
+    for (const itemId of excludedIds) {
+      delete state.assets[itemId];
+      if (state.previewDownloadsByItemId) delete state.previewDownloadsByItemId[itemId];
+      runtime.dirtyAssetIds.delete(itemId);
+    }
+
+    state.queue.detailPending = (state.queue.detailPending || []).filter(id => !excludedIdSet.has(id));
+    state.queue.detailInProgress = (state.queue.detailInProgress || []).filter(id => !excludedIdSet.has(id));
+    state.queue.detailDone = (state.queue.detailDone || []).filter(id => !excludedIdSet.has(id));
+    state.queue.detailErrors = (state.queue.detailErrors || []).filter(id => !excludedIdSet.has(id));
+    state.stats.detailErrors = state.queue.detailErrors.length;
+
+    await deleteAssetIdsFromDb(excludedIds);
+    return { purged: excludedIds.length };
   }
 
   async function loadCheckpoint() {
@@ -421,6 +485,8 @@
       }
     }
 
+    await purgeExcludedAssets();
+
     runtime.dbReady = true;
     ensureKnownSource(state.source);
     return true;
@@ -456,6 +522,7 @@
         }
       }
     }
+    await purgeExcludedAssets();
   }
 
   async function clearCheckpoint() {
@@ -521,6 +588,8 @@
 
       const typeEl = card?.querySelector('p[title]');
       const contentTypeLabel = typeEl?.getAttribute('title') || typeEl?.textContent?.trim() || null;
+      const inferredFileType = inferFileType(fileName, contentTypeLabel);
+      if (isExcludedAssetType(inferredFileType)) continue;
 
       const statusField = card?.querySelector('[data-id="fields.Status"] p, [data-id="fields.Status"] .MuiTypography-root p');
       const status = statusField?.textContent?.trim() || null;
@@ -543,7 +612,7 @@
           usageRights: null,
           publicUrl: null,
           fileSize: null,
-          fileType: inferFileType(fileName, contentTypeLabel),
+          fileType: inferredFileType,
           detailFetched: false,
           detailFetchStatus: null,
           detailError: null,
@@ -567,7 +636,7 @@
         x.contentTypeLabel ||= contentTypeLabel;
         x.status ||= status;
         x.expirationDate ??= expirationDate;
-        x.fileType ||= inferFileType(fileName, contentTypeLabel);
+        x.fileType ||= inferredFileType;
         x.sourceKeys ||= [];
         if (source?.sourceKey && !x.sourceKeys.includes(source.sourceKey)) x.sourceKeys.push(source.sourceKey);
         x.seenInCount = x.sourceKeys.length;
@@ -589,9 +658,10 @@
   }
 
   function inferFileType(fileName, contentTypeLabel) {
-    if (fileName && fileName.includes('.')) return fileName.split('.').pop().toLowerCase();
-    const m = String(contentTypeLabel || '').match(/\(([^)]+)\)/);
-    return m ? m[1].toLowerCase() : null;
+    if (fileName && fileName.includes('.')) return normalizeFileType(fileName.split('.').pop());
+    const label = String(contentTypeLabel || '');
+    const m = label.match(/\(([^)]+)\)/);
+    return normalizeFileType(m ? m[1] : label);
   }
 
   function textNearLabel(root, labelText) {
