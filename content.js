@@ -558,19 +558,43 @@
     while (runtime.running && !runtime.pausedByUser && !state.authExpired) {
       state.stats.scrollRounds++;
       const beforeAdded = collectVisibleCards();
-      const h = document.documentElement.scrollHeight;
-      window.scrollTo({ top: h, behavior: 'smooth' });
-      await sleep(1200);
+
+      const viewportHeight = Math.max(window.innerHeight || 0, 400);
+      const scrollStep = Math.max(Math.floor(viewportHeight * 0.9), 300);
+      const maxY = Math.max(document.documentElement.scrollHeight - viewportHeight, 0);
+      const targetY = Math.min(window.scrollY + scrollStep, maxY);
+
+      if (targetY > window.scrollY + 2) {
+        window.scrollTo({ top: targetY, behavior: 'auto' });
+      } else {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' });
+      }
+
+      await sleep(900);
       const afterAdded = collectVisibleCards();
 
       const currentCount = Object.keys(state.assets).length;
       const currentHeight = document.documentElement.scrollHeight;
+      const nearBottom = (window.scrollY + viewportHeight) >= (currentHeight - 8);
       const noGrowth = currentCount === lastCount && currentHeight === lastHeight && beforeAdded === 0 && afterAdded === 0;
-      idleRounds = noGrowth ? idleRounds + 1 : 0;
-      lastCount = currentCount;
-      lastHeight = currentHeight;
 
-      if (idleRounds >= 8) {
+      if (nearBottom && noGrowth) {
+        window.scrollTo({ top: currentHeight, behavior: 'auto' });
+        await sleep(700);
+        const afterPokeAdded = collectVisibleCards();
+        const pokeCount = Object.keys(state.assets).length;
+        const pokeHeight = document.documentElement.scrollHeight;
+        const stillNoGrowth = pokeCount === currentCount && pokeHeight === currentHeight && afterPokeAdded === 0;
+        idleRounds = stillNoGrowth ? idleRounds + 1 : 0;
+        lastCount = pokeCount;
+        lastHeight = pokeHeight;
+      } else {
+        idleRounds = noGrowth ? idleRounds + 1 : 0;
+        lastCount = currentCount;
+        lastHeight = currentHeight;
+      }
+
+      if (idleRounds >= 12) {
         state.discoveredComplete = true;
         break;
       }
