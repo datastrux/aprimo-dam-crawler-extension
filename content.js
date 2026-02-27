@@ -550,48 +550,84 @@
     }
   }
 
+  function getScrollContext() {
+    const root = document.scrollingElement || document.documentElement;
+    const candidates = Array.from(document.querySelectorAll('main, [role="main"], [role="grid"], [role="list"], [aria-label*="Assets" i], [class*="scroll" i], [class*="virtual" i]'));
+
+    let best = null;
+    let bestScore = 0;
+    for (const el of candidates) {
+      if (!(el instanceof HTMLElement)) continue;
+      const overflowY = getComputedStyle(el).overflowY;
+      if (!/(auto|scroll|overlay)/i.test(overflowY)) continue;
+      const scrollable = el.scrollHeight - el.clientHeight;
+      if (scrollable < 200) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 200 || rect.height < 200) continue;
+      const score = scrollable + rect.height;
+      if (score > bestScore) {
+        best = el;
+        bestScore = score;
+      }
+    }
+
+    if (best) {
+      return {
+        type: 'element',
+        viewportHeight: best.clientHeight,
+        currentY: best.scrollTop,
+        maxY: Math.max(best.scrollHeight - best.clientHeight, 0),
+        scrollTo(y) { best.scrollTop = y; }
+      };
+    }
+
+    return {
+      type: 'window',
+      viewportHeight: Math.max(window.innerHeight || 0, 400),
+      currentY: window.scrollY,
+      maxY: Math.max(root.scrollHeight - Math.max(window.innerHeight || 0, 400), 0),
+      scrollTo(y) { window.scrollTo({ top: y, behavior: 'auto' }); }
+    };
+  }
+
   async function scrollDiscoverLoop() {
     let idleRounds = 0;
     let lastCount = Object.keys(state.assets).length;
-    let lastHeight = document.documentElement.scrollHeight;
+    let lastExtent = Math.max((document.scrollingElement || document.documentElement).scrollHeight, 0);
 
     while (runtime.running && !runtime.pausedByUser && !state.authExpired) {
       state.stats.scrollRounds++;
       const beforeAdded = collectVisibleCards();
 
-      const viewportHeight = Math.max(window.innerHeight || 0, 400);
-      const scrollStep = Math.max(Math.floor(viewportHeight * 0.9), 300);
-      const maxY = Math.max(document.documentElement.scrollHeight - viewportHeight, 0);
-      const targetY = Math.min(window.scrollY + scrollStep, maxY);
-
-      if (targetY > window.scrollY + 2) {
-        window.scrollTo({ top: targetY, behavior: 'auto' });
-      } else {
-        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' });
-      }
+      const ctx = getScrollContext();
+      const scrollStep = Math.max(Math.floor(ctx.viewportHeight * 0.9), 300);
+      const targetY = Math.min(ctx.currentY + scrollStep, ctx.maxY);
+      ctx.scrollTo(targetY);
 
       await sleep(900);
       const afterAdded = collectVisibleCards();
 
       const currentCount = Object.keys(state.assets).length;
-      const currentHeight = document.documentElement.scrollHeight;
-      const nearBottom = (window.scrollY + viewportHeight) >= (currentHeight - 8);
-      const noGrowth = currentCount === lastCount && currentHeight === lastHeight && beforeAdded === 0 && afterAdded === 0;
+      const nextCtx = getScrollContext();
+      const currentExtent = Math.max((document.scrollingElement || document.documentElement).scrollHeight, nextCtx.maxY + nextCtx.viewportHeight);
+      const nearBottom = (nextCtx.currentY + nextCtx.viewportHeight) >= (nextCtx.maxY - 8);
+      const noGrowth = currentCount === lastCount && currentExtent === lastExtent && beforeAdded === 0 && afterAdded === 0;
 
       if (nearBottom && noGrowth) {
-        window.scrollTo({ top: currentHeight, behavior: 'auto' });
+        nextCtx.scrollTo(nextCtx.maxY);
         await sleep(700);
         const afterPokeAdded = collectVisibleCards();
         const pokeCount = Object.keys(state.assets).length;
-        const pokeHeight = document.documentElement.scrollHeight;
-        const stillNoGrowth = pokeCount === currentCount && pokeHeight === currentHeight && afterPokeAdded === 0;
+        const pokeCtx = getScrollContext();
+        const pokeExtent = Math.max((document.scrollingElement || document.documentElement).scrollHeight, pokeCtx.maxY + pokeCtx.viewportHeight);
+        const stillNoGrowth = pokeCount === currentCount && pokeExtent === currentExtent && afterPokeAdded === 0;
         idleRounds = stillNoGrowth ? idleRounds + 1 : 0;
         lastCount = pokeCount;
-        lastHeight = pokeHeight;
+        lastExtent = pokeExtent;
       } else {
         idleRounds = noGrowth ? idleRounds + 1 : 0;
         lastCount = currentCount;
-        lastHeight = currentHeight;
+        lastExtent = currentExtent;
       }
 
       if (idleRounds >= 12) {
