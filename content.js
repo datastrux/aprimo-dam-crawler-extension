@@ -46,7 +46,7 @@
     const sourceId = m[2].toLowerCase();
     return { sourceType, sourceId, sourceKey: `${sourceType}:${sourceId}` };
   }
-  function extractItemId(url) { const m = String(url).match(/\/items\/([a-f0-9]+)/i); return m ? m[1] : null; }
+  function extractItemId(url) { const m = String(url).match(/\/items\/([a-z0-9-]+)/i); return m ? m[1].toLowerCase() : null; }
 
   function currentSource() {
     return extractSourceContext(location.href);
@@ -118,27 +118,37 @@
 
   function normalizeImportedAsset(raw, fallbackSourceKey) {
     if (!raw || typeof raw !== 'object') return null;
-    const itemUrl = raw.itemUrl || null;
-    const itemId = raw.itemId || extractItemId(itemUrl);
+    const itemUrl = raw.itemUrl || raw.itemURL || raw.url || raw.assetUrl || raw['Asset item URL'] || null;
+    const rawItemId = raw.itemId || raw.itemID || raw.id || raw.assetId || raw['Item ID'] || raw['item_id'] || extractItemId(itemUrl);
+    const itemId = rawItemId ? String(rawItemId).trim().toLowerCase() : null;
     if (!itemId) return null;
+
+    const inferredDetailFetched = !!(
+      raw.detailFetched ?? raw.detailDone ?? raw['detail done'] ?? raw['Detail Done'] ??
+      raw.fileSize ?? raw.usageRights ?? raw.publicUrl
+    );
+
+    const inferredDownloadedPreview = !!(
+      raw.downloadedPreview ?? raw.previewDownloaded ?? raw['Preview Downloaded']
+    );
 
     const sourceKeys = uniqueStrings([...(raw.sourceKeys || []), fallbackSourceKey]);
     return {
       itemId,
-      fileName: raw.fileName || null,
+      fileName: raw.fileName || raw.filename || raw['File name'] || null,
       itemUrl,
-      previewUrl: raw.previewUrl || null,
-      contentTypeLabel: raw.contentTypeLabel || null,
-      status: raw.status || null,
-      expirationDate: normalizeDash(raw.expirationDate),
-      usageRights: raw.usageRights || null,
-      publicUrl: raw.publicUrl || null,
-      fileSize: raw.fileSize || null,
-      fileType: raw.fileType || inferFileType(raw.fileName, raw.contentTypeLabel),
-      detailFetched: !!raw.detailFetched,
+      previewUrl: raw.previewUrl || raw.previewURL || raw['Preview URL'] || null,
+      contentTypeLabel: raw.contentTypeLabel || raw.contentType || raw['Content Type'] || null,
+      status: raw.status || raw['Status'] || null,
+      expirationDate: normalizeDash(raw.expirationDate || raw['Expiration date'] || raw['Expiration Date']),
+      usageRights: raw.usageRights || raw['Usage rights'] || raw['Usage Rights'] || null,
+      publicUrl: raw.publicUrl || raw.publicURL || raw['Public URL'] || null,
+      fileSize: raw.fileSize || raw['File size'] || raw['File Size'] || null,
+      fileType: raw.fileType || raw['File type'] || raw['File Type'] || inferFileType(raw.fileName || raw.filename || raw['File name'], raw.contentTypeLabel || raw.contentType || raw['Content Type']),
+      detailFetched: inferredDetailFetched,
       detailFetchStatus: raw.detailFetchStatus ?? null,
       detailError: raw.detailError || null,
-      downloadedPreview: !!raw.downloadedPreview,
+      downloadedPreview: inferredDownloadedPreview,
       sourceKeys,
       seenInCount: sourceKeys.length,
       firstSeenAt: raw.firstSeenAt || nowIso(),
@@ -179,6 +189,11 @@
     } else if (!existing.detailFetched) {
       existing.detailError ||= incoming.detailError;
       existing.detailFetchStatus ??= incoming.detailFetchStatus;
+    }
+
+    if (existing.itemId && existing.downloadedPreview) {
+      state.previewDownloadsByItemId ||= {};
+      state.previewDownloadsByItemId[existing.itemId] ||= { filename: null, downloadedAt: nowIso() };
     }
   }
 
