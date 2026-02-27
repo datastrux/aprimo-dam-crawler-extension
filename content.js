@@ -1,13 +1,20 @@
 (() => {
   const STORAGE_KEY = 'damCrawlerState_v1';
   const CHECKPOINT_EVERY_MS = 5000;
+  const ASSET_DB_NAME = 'damCrawlerAssets_v1';
+  const ASSET_DB_VERSION = 1;
+  const ASSET_STORE = 'assets';
 
   const runtime = {
     running: false,
     pausedByUser: false,
     checkpointTimer: null,
-    options: { downloadPreviews: true }
+    options: { downloadPreviews: true },
+    dirtyAssetIds: new Set(),
+    dbReady: false
   };
+
+  let assetDbPromise = null;
 
   let state = {
     version: 1,
@@ -39,6 +46,81 @@
   function nowIso() { return new Date().toISOString(); }
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   function absUrl(href) { try { return new URL(href, location.origin).href; } catch { return null; } }
+
+  function idbRequest(req) {
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('IndexedDB request failed'));
+    });
+  }
+
+  function openAssetDb() {
+    if (assetDbPromise) return assetDbPromise;
+    assetDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(ASSET_DB_NAME, ASSET_DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(ASSET_STORE)) {
+          db.createObjectStore(ASSET_STORE, { keyPath: 'itemId' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('Failed to open asset database'));
+    });
+    return assetDbPromise;
+  }
+
+  async function withAssetStore(mode, handler) {
+    const db = await openAssetDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(ASSET_STORE, mode);
+      const store = tx.objectStore(ASSET_STORE);
+      let result;
+      try {
+        result = handler(store);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+      tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+    });
+  }
+
+  async function getAllAssetsFromDb() {
+    return withAssetStore('readonly', store => idbRequest(store.getAll()));
+  }
+
+  async function putAssetsToDb(assets) {
+    if (!assets?.length) return;
+    await withAssetStore('readwrite', store => {
+      for (const asset of assets) {
+        if (!asset?.itemId) continue;
+        store.put(asset);
+      }
+    });
+  }
+
+  async function clearAssetDb() {
+    await withAssetStore('readwrite', store => idbRequest(store.clear()));
+  }
+
+  function markAssetDirty(itemId) {
+    if (!itemId) return;
+    runtime.dirtyAssetIds.add(itemId);
+  }
+
+  async function flushDirtyAssetsToDb() {
+    if (!runtime.dbReady || runtime.dirtyAssetIds.size === 0) return;
+    const dirtyAssets = [];
+    for (const itemId of runtime.dirtyAssetIds) {
+      const asset = state.assets[itemId];
+      if (asset) dirtyAssets.push(asset);
+    }
+    runtime.dirtyAssetIds.clear();
+    await putAssetsToDb(dirtyAssets);
+  }
   function extractSourceContext(url) {
     const m = String(url).match(/\/dam\/(collections|spaces)\/([a-f0-9]+)/i);
     if (!m) return { sourceType: null, sourceId: null, sourceKey: null };
@@ -286,6 +368,7 @@
           state.previewDownloadsByItemId ||= {};
           state.previewDownloadsByItemId[incoming.itemId] ||= { filename: null, downloadedAt: nowIso() };
         }
+        markAssetDirty(incoming.itemId);
         added++;
       } else {
         mergeAsset(existing, incoming);
@@ -293,6 +376,7 @@
           state.previewDownloadsByItemId ||= {};
           state.previewDownloadsByItemId[existing.itemId] ||= { filename: null, downloadedAt: nowIso() };
         }
+        markAssetDirty(existing.itemId);
         updated++;
       }
     }
@@ -308,6 +392,10 @@
     if (!saved) return false;
     const migrated = migrateState(saved);
     if (!migrated) return false;
+
+    const legacyAssets = migrated.assets || {};
+    const legacyPreviewIndex = migrated.previewDownloadsByItemId || {};
+
     state = {
       ...state,
       ...migrated,
@@ -315,17 +403,59 @@
       pageOrigin: location.origin,
       source: currentSource()
     };
+
+    const dbAssets = await getAllAssetsFromDb();
+    if (!dbAssets.length && Object.keys(legacyAssets).length) {
+      await putAssetsToDb(Object.values(legacyAssets));
+    }
+
+    const hydratedAssets = await getAllAssetsFromDb();
+    state.assets = Object.fromEntries(hydratedAssets.map(a => [a.itemId, a]));
+
+    if (!Object.keys(state.previewDownloadsByItemId || {}).length) {
+      state.previewDownloadsByItemId = { ...legacyPreviewIndex };
+      for (const asset of Object.values(state.assets)) {
+        if (asset?.itemId && asset.downloadedPreview) {
+          state.previewDownloadsByItemId[asset.itemId] ||= { filename: null, downloadedAt: nowIso() };
+        }
+      }
+    }
+
+    runtime.dbReady = true;
     ensureKnownSource(state.source);
     return true;
   }
 
   async function saveCheckpoint() {
+    await flushDirtyAssetsToDb();
     state.pageUrl = location.href;
     state.source = currentSource();
     ensureKnownSource(state.source);
     state.lastScrollY = window.scrollY;
     state.stats.updatedAt = nowIso();
-    await chrome.storage.local.set({ [STORAGE_KEY]: state });
+
+    const checkpoint = {
+      ...state,
+      assets: {},
+      previewDownloadsByItemId: {}
+    };
+
+    await chrome.storage.local.set({ [STORAGE_KEY]: checkpoint });
+  }
+
+  async function initializePersistentAssets() {
+    await openAssetDb();
+    runtime.dbReady = true;
+    if (!Object.keys(state.assets || {}).length) {
+      const hydratedAssets = await getAllAssetsFromDb();
+      state.assets = Object.fromEntries(hydratedAssets.map(a => [a.itemId, a]));
+      state.previewDownloadsByItemId ||= {};
+      for (const asset of hydratedAssets) {
+        if (asset?.itemId && asset.downloadedPreview) {
+          state.previewDownloadsByItemId[asset.itemId] ||= { filename: null, downloadedAt: nowIso() };
+        }
+      }
+    }
   }
 
   async function clearCheckpoint() {
@@ -426,6 +556,7 @@
           raw: {}
         };
         if (state.previewDownloadsByItemId?.[itemId]) state.assets[itemId].downloadedPreview = true;
+        markAssetDirty(itemId);
         added++;
         queueIfMissing(itemId);
       } else {
@@ -443,6 +574,7 @@
         x.lastSeenAt = nowIso();
         x.lastSeenSourceKey = source?.sourceKey || x.lastSeenSourceKey || null;
         if (state.previewDownloadsByItemId?.[itemId]) x.downloadedPreview = true;
+        markAssetDirty(itemId);
       }
     }
 
@@ -516,6 +648,7 @@
         detailFetched: true,
         detailError: null
       });
+      markAssetDirty(itemId);
       removeFrom(state.queue.detailInProgress, itemId);
       if (!state.queue.detailDone.includes(itemId)) state.queue.detailDone.push(itemId);
       state.stats.detailFetched++;
@@ -529,6 +662,7 @@
       const msg = String(err?.message || err);
       asset.detailFetched = false;
       asset.detailError = msg;
+      markAssetDirty(itemId);
       removeFrom(state.queue.detailInProgress, itemId);
       if (msg.includes('AUTH_EXPIRED') || msg.includes('LOGIN_PAGE')) {
         state.authExpired = true;
@@ -556,6 +690,7 @@
     if (res?.ok) {
       asset.downloadedPreview = true;
       state.previewDownloadsByItemId[asset.itemId] = { filename, downloadedAt: nowIso() };
+      markAssetDirty(asset.itemId);
     }
     return res;
   }
@@ -692,7 +827,10 @@
     state.authExpired = false;
     runtime.options = { ...runtime.options, ...options };
     state.stats.startedAt ||= nowIso();
-    await loadCheckpoint();
+    const foundCheckpoint = await loadCheckpoint();
+    if (!foundCheckpoint) {
+      await initializePersistentAssets();
+    }
     state.source = currentSource();
     ensureKnownSource(state.source);
     state.discoveredComplete = false;
@@ -785,6 +923,7 @@
 
   async function resetState() {
     pauseMain();
+    runtime.dirtyAssetIds.clear();
     state = {
       version: 1,
       pageUrl: location.href,
@@ -800,6 +939,7 @@
       stats: { startedAt: null, updatedAt: null, scrollRounds: 0, visibleScans: 0, detailFetched: 0, detailErrors: 0 }
     };
     ensureKnownSource(state.source);
+    await clearAssetDb();
     await clearCheckpoint();
   }
 
@@ -863,14 +1003,15 @@
     return true;
   });
 
-  loadCheckpoint().then(found => {
-    if (found) {
-      // restore scroll position for convenience, not required
-      if (typeof state.lastScrollY === 'number' && state.lastScrollY > 0) {
-        setTimeout(() => window.scrollTo(0, state.lastScrollY), 500);
-      }
+  (async () => {
+    const found = await loadCheckpoint();
+    if (!found) {
+      await initializePersistentAssets();
     }
-  }).catch(console.warn);
+    if (typeof state.lastScrollY === 'number' && state.lastScrollY > 0) {
+      setTimeout(() => window.scrollTo(0, state.lastScrollY), 500);
+    }
+  })().catch(console.warn);
 
   console.log('[Aprimo DAM Crawler] content script loaded');
 })();

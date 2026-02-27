@@ -50,6 +50,7 @@ If login/auth expires:
 - Added popup completion notifications for:
 	- Successful completion (green)
 	- Completed with errors (yellow)
+- Added permanent storage architecture for scale: assets are persisted in IndexedDB (migrated from legacy checkpoint state), while `chrome.storage.local` now stores lightweight run/checkpoint metadata.
 
 ## Versioning note
 - Current release: `0.2.0`
