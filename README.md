@@ -2,7 +2,7 @@
 
 Crawls Aprimo DAM collection and space pages with infinite/AJAX scrolling, collects image asset metadata, fetches detail pages, supports checkpoint/resume, dedupes by Item ID, and exports JSON/CSV.
 
-## What it captures (v0.1)
+## What it captures (v0.2)
 - Asset item URL
 - Item ID
 - File name
@@ -43,9 +43,20 @@ If login/auth expires:
 - Added support for Aprimo Space URLs (`/dam/spaces/...`) in addition to collection URLs.
 - Added state migration so existing saved crawl progress continues to work without restarting.
 - Added master-state dedupe by `Item ID` across collections and spaces.
+- Added JSON import + merge support to restore/exported crawl state into local checkpoint storage.
+- Added recheck flow for incomplete details (assets discovered where detail fetch was not completed).
+- Replaced separate Start/Pause buttons with one toggle run button and visual icons.
+- Moved extension assets into `images/` folder and updated icon paths.
 - Added popup completion notifications for:
 	- Successful completion (green)
 	- Completed with errors (yellow)
+
+## Versioning note
+- Current release: `0.2.0`
+- Recommended convention for future changes:
+	- Patch (`0.2.x`): bug fixes/UI tweaks
+	- Minor (`0.x.0`): new crawler features, data fields, or workflow additions
+	- Major (`x.0.0`): breaking export/schema or behavior changes
 
 ## Notes / caveats
 - Uses resilient selectors (`a[href*="/items/"]`, `data-id="fields.ExpirationDate.value"`, etc.) to avoid brittle generated CSS classes.

@@ -14,13 +14,16 @@
     <div id="completionWarningNotice" class="notice warning hidden">Crawl completed with errors. Review the Errors count and export for details.</div>
 
     <div class="grid">
-      <button id="startBtn">Start / Resume</button>
-      <button id="pauseBtn">Pause</button>
+      <button id="toggleRunBtn" class="icon-btn"><img id="toggleRunIcon" src="images/play.png" alt="Start" /><span id="toggleRunLabel">Start / Resume</span></button>
       <button id="scanBtn">Scan Visible</button>
+      <button id="recheckBtn">Recheck Incomplete</button>
       <button id="exportBtn">Export JSON</button>
       <button id="exportCsvBtn">Export CSV</button>
+      <button id="importBtn">Import JSON</button>
       <button id="resetBtn" class="danger">Reset State</button>
     </div>
+
+    <input id="importFileInput" type="file" accept="application/json,.json" class="hidden" />
 
     <div class="stats">
       <div><span>Assets:</span> <strong id="assetCount">0</strong></div>

@@ -107,6 +107,173 @@
     return migrated;
   }
 
+  function uniqueStrings(values) {
+    return Array.from(new Set((values || []).filter(v => typeof v === 'string' && v.trim())));
+  }
+
+  function normalizeImportedAsset(raw, fallbackSourceKey) {
+    if (!raw || typeof raw !== 'object') return null;
+    const itemUrl = raw.itemUrl || null;
+    const itemId = raw.itemId || extractItemId(itemUrl);
+    if (!itemId) return null;
+
+    const sourceKeys = uniqueStrings([...(raw.sourceKeys || []), fallbackSourceKey]);
+    return {
+      itemId,
+      fileName: raw.fileName || null,
+      itemUrl,
+      previewUrl: raw.previewUrl || null,
+      contentTypeLabel: raw.contentTypeLabel || null,
+      status: raw.status || null,
+      expirationDate: normalizeDash(raw.expirationDate),
+      usageRights: raw.usageRights || null,
+      publicUrl: raw.publicUrl || null,
+      fileSize: raw.fileSize || null,
+      fileType: raw.fileType || inferFileType(raw.fileName, raw.contentTypeLabel),
+      detailFetched: !!raw.detailFetched,
+      detailFetchStatus: raw.detailFetchStatus ?? null,
+      detailError: raw.detailError || null,
+      downloadedPreview: !!raw.downloadedPreview,
+      sourceKeys,
+      seenInCount: sourceKeys.length,
+      firstSeenAt: raw.firstSeenAt || nowIso(),
+      lastSeenAt: raw.lastSeenAt || nowIso(),
+      lastSeenSourceKey: raw.lastSeenSourceKey || sourceKeys[sourceKeys.length - 1] || null,
+      raw: raw.raw && typeof raw.raw === 'object' ? raw.raw : {}
+    };
+  }
+
+  function mergeAsset(existing, incoming) {
+    existing.fileName ||= incoming.fileName;
+    existing.itemUrl ||= incoming.itemUrl;
+    existing.previewUrl ||= incoming.previewUrl;
+    existing.contentTypeLabel ||= incoming.contentTypeLabel;
+    existing.status ||= incoming.status;
+    existing.expirationDate ??= incoming.expirationDate;
+    existing.usageRights ||= incoming.usageRights;
+    existing.publicUrl ||= incoming.publicUrl;
+    existing.fileSize ||= incoming.fileSize;
+    existing.fileType ||= incoming.fileType;
+    existing.downloadedPreview = !!(existing.downloadedPreview || incoming.downloadedPreview);
+
+    existing.sourceKeys = uniqueStrings([...(existing.sourceKeys || []), ...(incoming.sourceKeys || [])]);
+    existing.seenInCount = existing.sourceKeys.length;
+    existing.firstSeenAt ||= incoming.firstSeenAt || nowIso();
+    existing.lastSeenAt = nowIso();
+    existing.lastSeenSourceKey = incoming.lastSeenSourceKey || existing.lastSeenSourceKey || existing.sourceKeys[existing.sourceKeys.length - 1] || null;
+
+    if (incoming.detailFetched) {
+      existing.detailFetched = true;
+      existing.detailError = null;
+      existing.detailFetchStatus = incoming.detailFetchStatus ?? existing.detailFetchStatus ?? null;
+      existing.status ||= incoming.status;
+      existing.expirationDate ??= incoming.expirationDate;
+      existing.fileSize ||= incoming.fileSize;
+      existing.usageRights ||= incoming.usageRights;
+      existing.publicUrl ||= incoming.publicUrl;
+    } else if (!existing.detailFetched) {
+      existing.detailError ||= incoming.detailError;
+      existing.detailFetchStatus ??= incoming.detailFetchStatus;
+    }
+  }
+
+  function rebuildQueues(options = {}) {
+    const { requeueIncomplete = false, clearErrors = false } = options;
+    const itemIds = Object.keys(state.assets || {});
+    const pending = new Set((state.queue.detailPending || []).filter(id => !!state.assets[id]));
+    const inProgress = new Set((state.queue.detailInProgress || []).filter(id => !!state.assets[id]));
+    const done = new Set((state.queue.detailDone || []).filter(id => !!state.assets[id]));
+    const errors = new Set((state.queue.detailErrors || []).filter(id => !!state.assets[id]));
+
+    let requeuedCount = 0;
+
+    for (const itemId of itemIds) {
+      const asset = state.assets[itemId];
+      if (!asset) continue;
+
+      if (asset.detailFetched) {
+        done.add(itemId);
+        pending.delete(itemId);
+        inProgress.delete(itemId);
+        errors.delete(itemId);
+        continue;
+      }
+
+      done.delete(itemId);
+
+      if (clearErrors) {
+        errors.delete(itemId);
+        asset.detailError = null;
+        asset.detailFetchStatus = null;
+      }
+
+      const shouldQueue = requeueIncomplete && !!asset.itemUrl;
+      if (shouldQueue && !pending.has(itemId) && !inProgress.has(itemId)) {
+        pending.add(itemId);
+        requeuedCount++;
+      }
+    }
+
+    state.queue.detailPending = Array.from(pending);
+    state.queue.detailInProgress = Array.from(inProgress);
+    state.queue.detailDone = Array.from(done);
+    state.queue.detailErrors = Array.from(errors);
+    state.stats.detailErrors = state.queue.detailErrors.length;
+
+    return { requeuedCount };
+  }
+
+  async function importStatePayload(payload) {
+    if (!payload || typeof payload !== 'object') throw new Error('Invalid import payload');
+    if (!Array.isArray(payload.assets)) throw new Error('Import JSON must contain an assets array');
+
+    const importedSource = payload.source?.sourceKey || null;
+    const importedKnownSources = payload.knownSources && typeof payload.knownSources === 'object' ? payload.knownSources : {};
+
+    state.knownSources ||= {};
+    for (const [key, value] of Object.entries(importedKnownSources)) {
+      if (!key || !value || typeof value !== 'object') continue;
+      state.knownSources[key] ||= {
+        sourceType: value.sourceType || null,
+        sourceId: value.sourceId || null,
+        url: value.url || location.href,
+        firstSeenAt: value.firstSeenAt || nowIso(),
+        lastSeenAt: value.lastSeenAt || nowIso()
+      };
+      state.knownSources[key].lastSeenAt = nowIso();
+    }
+    ensureKnownSource(currentSource());
+
+    let added = 0;
+    let updated = 0;
+    let skipped = 0;
+
+    for (const rawAsset of payload.assets) {
+      const incoming = normalizeImportedAsset(rawAsset, importedSource);
+      if (!incoming) {
+        skipped++;
+        continue;
+      }
+
+      const existing = state.assets[incoming.itemId];
+      if (!existing) {
+        state.assets[incoming.itemId] = incoming;
+        if (!incoming.detailFetched && incoming.itemUrl) queueIfMissing(incoming.itemId);
+        if (incoming.detailFetched && !state.queue.detailDone.includes(incoming.itemId)) {
+          state.queue.detailDone.push(incoming.itemId);
+        }
+        added++;
+      } else {
+        mergeAsset(existing, incoming);
+        updated++;
+      }
+    }
+
+    rebuildQueues({ requeueIncomplete: false, clearErrors: false });
+    await saveCheckpoint();
+    return { added, updated, skipped };
+  }
+
   async function loadCheckpoint() {
     const obj = await chrome.storage.local.get(STORAGE_KEY);
     const saved = obj?.[STORAGE_KEY];
@@ -442,6 +609,29 @@
     saveCheckpoint().catch(console.warn);
   }
 
+  async function recheckIncomplete(options = {}) {
+    if (runtime.running) throw new Error('Crawler is already running');
+
+    runtime.running = true;
+    runtime.pausedByUser = false;
+    state.authExpired = false;
+    runtime.options = { ...runtime.options, ...options };
+    startCheckpointLoop();
+
+    try {
+      const { requeuedCount } = rebuildQueues({ requeueIncomplete: true, clearErrors: true });
+      state.discoveredComplete = true;
+      await saveCheckpoint();
+      await detailWorkerLoop();
+      await saveCheckpoint();
+      return { processed: requeuedCount };
+    } finally {
+      runtime.running = false;
+      stopCheckpointLoop();
+      await saveCheckpoint().catch(() => {});
+    }
+  }
+
   async function exportJson() {
     const payload = {
       source: state.source,
@@ -532,6 +722,16 @@
             const added = collectVisibleCards();
             await saveCheckpoint();
             sendResponse({ ok: true, added, stats: getStats() });
+            return;
+          }
+          case 'DAM_CRAWLER_IMPORT_STATE': {
+            const result = await importStatePayload(msg.payload);
+            sendResponse({ ok: true, ...result, stats: getStats() });
+            return;
+          }
+          case 'DAM_CRAWLER_RECHECK_INCOMPLETE': {
+            const result = await recheckIncomplete(msg.options || {});
+            sendResponse({ ok: true, ...result, stats: getStats() });
             return;
           }
           case 'DAM_CRAWLER_EXPORT_JSON':
