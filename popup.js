@@ -11,6 +11,24 @@ async function sendToContent(message) {
 
 let lastStats = {};
 
+async function loadTogglePreferences() {
+  const checkbox = document.getElementById('downloadPreviews');
+  if (!checkbox) return;
+  const saved = await chrome.storage.local.get('downloadPreviewsEnabled');
+  const hasSaved = typeof saved?.downloadPreviewsEnabled === 'boolean';
+  const enabled = hasSaved ? saved.downloadPreviewsEnabled : true;
+  checkbox.checked = enabled;
+  if (!hasSaved) {
+    await chrome.storage.local.set({ downloadPreviewsEnabled: true });
+  }
+}
+
+async function saveTogglePreferences() {
+  const checkbox = document.getElementById('downloadPreviews');
+  if (!checkbox) return;
+  await chrome.storage.local.set({ downloadPreviewsEnabled: !!checkbox.checked });
+}
+
 function setStatus(text) {
   document.getElementById('status').textContent = text;
 }
@@ -175,3 +193,7 @@ document.getElementById('resetBtn').addEventListener('click', () => clickReset()
 
 refresh();
 setInterval(refresh, 2000);
+loadTogglePreferences().catch(() => {});
+document.getElementById('downloadPreviews').addEventListener('change', () => {
+  saveTogglePreferences().catch(() => {});
+});

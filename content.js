@@ -6,7 +6,7 @@
     running: false,
     pausedByUser: false,
     checkpointTimer: null,
-    options: { downloadPreviews: false }
+    options: { downloadPreviews: true }
   };
 
   let state = {
