@@ -7,6 +7,10 @@ body {
 .wrap { width: 360px; padding: 12px; }
 h1 { margin: 0 0 8px; font-size: 16px; }
 .status { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px; margin-bottom: 10px; }
+.notice { border-radius: 8px; padding: 8px; margin-bottom: 10px; border: 1px solid transparent; font-weight: 600; }
+.notice.success { background: #e9f8ee; border-color: #8fd2a5; color: #1f6b3a; }
+.notice.warning { background: #fff6df; border-color: #e6c46c; color: #7a5712; }
+.hidden { display: none; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 button { border: 1px solid #ccc; border-radius: 8px; padding: 8px; background: #fff; cursor: pointer; }
 button:hover { background: #f0f3f7; }

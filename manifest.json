@@ -19,7 +19,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.aprimo.com/dam/collections/*"],
+      "matches": [
+        "https://*.aprimo.com/dam/collections/*",
+        "https://*.aprimo.com/dam/spaces/*"
+      ],
       "js": ["content.js"],
       "run_at": "document_idle"
     }

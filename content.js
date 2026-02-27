@@ -13,7 +13,8 @@
     version: 1,
     pageUrl: location.href,
     pageOrigin: location.origin,
-    collectionId: extractCollectionId(location.href),
+    source: extractSourceContext(location.href),
+    knownSources: {},
     discoveredComplete: false,
     lastScrollY: 0,
     authExpired: false,
@@ -37,20 +38,96 @@
   function nowIso() { return new Date().toISOString(); }
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   function absUrl(href) { try { return new URL(href, location.origin).href; } catch { return null; } }
-  function extractCollectionId(url) { const m = String(url).match(/\/dam\/collections\/([a-f0-9]+)/i); return m ? m[1] : null; }
+  function extractSourceContext(url) {
+    const m = String(url).match(/\/dam\/(collections|spaces)\/([a-f0-9]+)/i);
+    if (!m) return { sourceType: null, sourceId: null, sourceKey: null };
+    const sourceType = m[1].toLowerCase();
+    const sourceId = m[2].toLowerCase();
+    return { sourceType, sourceId, sourceKey: `${sourceType}:${sourceId}` };
+  }
   function extractItemId(url) { const m = String(url).match(/\/items\/([a-f0-9]+)/i); return m ? m[1] : null; }
+
+  function currentSource() {
+    return extractSourceContext(location.href);
+  }
+
+  function ensureKnownSource(source = currentSource()) {
+    if (!source?.sourceKey) return;
+    state.knownSources[source.sourceKey] ||= {
+      sourceType: source.sourceType,
+      sourceId: source.sourceId,
+      url: location.href,
+      firstSeenAt: nowIso(),
+      lastSeenAt: nowIso()
+    };
+    state.knownSources[source.sourceKey].lastSeenAt = nowIso();
+    state.knownSources[source.sourceKey].url = location.href;
+  }
+
+  function migrateState(saved) {
+    if (!saved || typeof saved !== 'object') return null;
+    const migrated = { ...saved };
+
+    if (!migrated.source) {
+      const legacyCollectionId = migrated.collectionId || extractSourceContext(migrated.pageUrl || location.href).sourceId;
+      if (legacyCollectionId) {
+        migrated.source = {
+          sourceType: 'collections',
+          sourceId: legacyCollectionId,
+          sourceKey: `collections:${legacyCollectionId}`
+        };
+      } else {
+        migrated.source = currentSource();
+      }
+    }
+
+    migrated.knownSources ||= {};
+    if (migrated.source?.sourceKey && !migrated.knownSources[migrated.source.sourceKey]) {
+      migrated.knownSources[migrated.source.sourceKey] = {
+        sourceType: migrated.source.sourceType,
+        sourceId: migrated.source.sourceId,
+        url: migrated.pageUrl || location.href,
+        firstSeenAt: nowIso(),
+        lastSeenAt: nowIso()
+      };
+    }
+
+    migrated.assets ||= {};
+    for (const asset of Object.values(migrated.assets)) {
+      if (!asset || typeof asset !== 'object') continue;
+      const sourceSet = new Set(Array.isArray(asset.sourceKeys) ? asset.sourceKeys : []);
+      if (!sourceSet.size && migrated.source?.sourceKey) sourceSet.add(migrated.source.sourceKey);
+      asset.sourceKeys = Array.from(sourceSet);
+      asset.seenInCount = asset.sourceKeys.length;
+      asset.firstSeenAt ||= nowIso();
+      asset.lastSeenAt ||= nowIso();
+      asset.lastSeenSourceKey ||= asset.sourceKeys[asset.sourceKeys.length - 1] || null;
+    }
+
+    return migrated;
+  }
 
   async function loadCheckpoint() {
     const obj = await chrome.storage.local.get(STORAGE_KEY);
     const saved = obj?.[STORAGE_KEY];
     if (!saved) return false;
-    if (saved.collectionId && state.collectionId && saved.collectionId !== state.collectionId) return false;
-    state = { ...state, ...saved, pageUrl: location.href, pageOrigin: location.origin, collectionId: state.collectionId || saved.collectionId };
+    const migrated = migrateState(saved);
+    if (!migrated) return false;
+    state = {
+      ...state,
+      ...migrated,
+      pageUrl: location.href,
+      pageOrigin: location.origin,
+      source: currentSource()
+    };
+    ensureKnownSource(state.source);
     return true;
   }
 
   async function saveCheckpoint() {
     state.pageUrl = location.href;
+    state.source = currentSource();
+    ensureKnownSource(state.source);
     state.lastScrollY = window.scrollY;
     state.stats.updatedAt = nowIso();
     await chrome.storage.local.set({ [STORAGE_KEY]: state });
@@ -70,13 +147,23 @@
   }
 
   function getStats() {
+    const pending = state.queue.detailPending.length;
+    const inProgress = state.queue.detailInProgress.length;
+    const errors = state.queue.detailErrors.length;
+    const completedBase = !!state.discoveredComplete && !runtime.running && !state.authExpired && pending === 0 && inProgress === 0;
+    const completedSuccessfully = completedBase && errors === 0;
+    const completedWithErrors = completedBase && errors > 0;
     return {
       running: runtime.running,
       assetCount: Object.keys(state.assets).length,
       detailDone: state.queue.detailDone.length,
-      detailErrors: state.queue.detailErrors.length,
+      detailErrors: errors,
+      detailPending: pending,
+      detailInProgress: inProgress,
       authExpired: !!state.authExpired,
-      discoveredComplete: !!state.discoveredComplete
+      discoveredComplete: !!state.discoveredComplete,
+      completedSuccessfully,
+      completedWithErrors
     };
   }
 
@@ -95,6 +182,8 @@
   function collectVisibleCards() {
     state.stats.visibleScans++;
     let added = 0;
+    const source = currentSource();
+    ensureKnownSource(source);
 
     const anchors = Array.from(document.querySelectorAll('a[href*="/items/"]'));
     for (const a of anchors) {
@@ -134,6 +223,11 @@
           detailFetchStatus: null,
           detailError: null,
           downloadedPreview: false,
+          sourceKeys: source?.sourceKey ? [source.sourceKey] : [],
+          seenInCount: source?.sourceKey ? 1 : 0,
+          firstSeenAt: nowIso(),
+          lastSeenAt: nowIso(),
+          lastSeenSourceKey: source?.sourceKey || null,
           raw: {}
         };
         added++;
@@ -147,6 +241,11 @@
         x.status ||= status;
         x.expirationDate ??= expirationDate;
         x.fileType ||= inferFileType(fileName, contentTypeLabel);
+        x.sourceKeys ||= [];
+        if (source?.sourceKey && !x.sourceKeys.includes(source.sourceKey)) x.sourceKeys.push(source.sourceKey);
+        x.seenInCount = x.sourceKeys.length;
+        x.lastSeenAt = nowIso();
+        x.lastSeenSourceKey = source?.sourceKey || x.lastSeenSourceKey || null;
       }
     }
 
@@ -246,7 +345,9 @@
   }
 
   async function requestPreviewDownload(asset) {
-    const filename = sanitizePath(`aprimo_dam_previews/${state.collectionId || 'collection'}/${asset.itemId}__${asset.fileName || 'asset'}.${asset.fileType || 'bin'}`)
+    const current = currentSource();
+    const sourceSegment = current?.sourceId || 'source';
+    const filename = sanitizePath(`aprimo_dam_previews/${sourceSegment}/${asset.itemId}__${asset.fileName || 'asset'}.${asset.fileType || 'bin'}`)
       .replace(/\.(jpg|jpeg|png|gif|webp)\.(jpg|jpeg|png|gif|webp)$/i, '.$1');
     const res = await chrome.runtime.sendMessage({ type: 'DAM_CRAWLER_DOWNLOAD_URL', url: asset.previewUrl, filename });
     if (res?.ok) asset.downloadedPreview = true;
@@ -318,6 +419,9 @@
     runtime.options = { ...runtime.options, ...options };
     state.stats.startedAt ||= nowIso();
     await loadCheckpoint();
+    state.source = currentSource();
+    ensureKnownSource(state.source);
+    state.discoveredComplete = false;
     startCheckpointLoop();
 
     try {
@@ -340,8 +444,10 @@
 
   async function exportJson() {
     const payload = {
-      collectionId: state.collectionId,
-      collectionUrl: location.href,
+      source: state.source,
+      knownSources: state.knownSources,
+      sourceCount: Object.keys(state.knownSources || {}).length,
+      sourceUrl: location.href,
       exportedAt: nowIso(),
       stats: state.stats,
       discoveredComplete: state.discoveredComplete,
@@ -351,7 +457,7 @@
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const blobUrl = URL.createObjectURL(blob);
-    const filename = `aprimo_dam_assets_${state.collectionId || 'collection'}_${Date.now()}.json`;
+    const filename = `aprimo_dam_assets_master_${Date.now()}.json`;
     const res = await chrome.runtime.sendMessage({ type: 'DAM_CRAWLER_DOWNLOAD_BLOB', blobUrl, filename });
     setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
     return res;
@@ -360,12 +466,15 @@
   async function exportCsv() {
     const rows = Object.values(state.assets);
     const headers = [
-      'itemId','fileName','itemUrl','previewUrl','contentTypeLabel','fileType','status','expirationDate','usageRights','publicUrl','fileSize','detailFetched','detailFetchStatus','detailError','downloadedPreview'
+      'itemId','fileName','itemUrl','previewUrl','contentTypeLabel','fileType','status','expirationDate','usageRights','publicUrl','fileSize','detailFetched','detailFetchStatus','detailError','downloadedPreview','seenInCount','sourceKeys','firstSeenAt','lastSeenAt','lastSeenSourceKey'
     ];
-    const csv = [headers.join(',')].concat(rows.map(r => headers.map(h => csvEscape(r[h])).join(','))).join('\n');
+    const csv = [headers.join(',')].concat(rows.map(r => headers.map(h => {
+      if (h === 'sourceKeys') return csvEscape((r.sourceKeys || []).join('|'));
+      return csvEscape(r[h]);
+    }).join(','))).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const blobUrl = URL.createObjectURL(blob);
-    const filename = `aprimo_dam_assets_${state.collectionId || 'collection'}_${Date.now()}.csv`;
+    const filename = `aprimo_dam_assets_master_${Date.now()}.csv`;
     const res = await chrome.runtime.sendMessage({ type: 'DAM_CRAWLER_DOWNLOAD_BLOB', blobUrl, filename });
     setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
     return res;
@@ -383,7 +492,8 @@
       version: 1,
       pageUrl: location.href,
       pageOrigin: location.origin,
-      collectionId: extractCollectionId(location.href),
+      source: currentSource(),
+      knownSources: {},
       discoveredComplete: false,
       lastScrollY: 0,
       authExpired: false,
@@ -391,6 +501,7 @@
       queue: { detailPending: [], detailInProgress: [], detailDone: [], detailErrors: [] },
       stats: { startedAt: null, updatedAt: null, scrollRounds: 0, visibleScans: 0, detailFetched: 0, detailErrors: 0 }
     };
+    ensureKnownSource(state.source);
     await clearCheckpoint();
   }
 
@@ -399,7 +510,15 @@
       try {
         switch (msg?.type) {
           case 'DAM_CRAWLER_STATUS':
-            sendResponse({ ok: true, message: state.authExpired ? 'Auth expired. Re-login and click Start / Resume.' : 'Ready', stats: getStats() });
+            {
+              const stats = getStats();
+              const message = state.authExpired
+                ? 'Auth expired. Re-login and click Start / Resume.'
+                : (stats.completedSuccessfully
+                  ? 'Crawl completed successfully.'
+                  : (stats.completedWithErrors ? 'Crawl completed with errors.' : 'Ready'));
+              sendResponse({ ok: true, message, stats });
+            }
             return;
           case 'DAM_CRAWLER_START':
             runMain(msg.options || {}).catch(console.warn);

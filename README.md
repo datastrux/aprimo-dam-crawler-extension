@@ -1,6 +1,6 @@
-# Aprimo DAM Collection Crawler (Chrome Extension, MV3)
+# Aprimo DAM Asset Crawler (Chrome Extension, MV3)
 
-Crawls Aprimo DAM collection pages with infinite/AJAX scrolling, collects image asset metadata, fetches detail pages, supports checkpoint/resume, and exports JSON/CSV.
+Crawls Aprimo DAM collection and space pages with infinite/AJAX scrolling, collects image asset metadata, fetches detail pages, supports checkpoint/resume, dedupes by Item ID, and exports JSON/CSV.
 
 ## What it captures (v0.1)
 - Asset item URL
@@ -18,7 +18,7 @@ Crawls Aprimo DAM collection pages with infinite/AJAX scrolling, collects image 
 Progress is checkpointed in `chrome.storage.local` every few seconds and during queue transitions.
 If login/auth expires:
 1. Log back into Aprimo
-2. Return to the same collection page
+2. Return to the same collection or space page
 3. Click **Start / Resume**
 
 ## Install (unpacked)
@@ -28,11 +28,24 @@ If login/auth expires:
 4. Select this folder (`aprimo_dam_crawler_extension`)
 
 ## Use
-1. Open an Aprimo collection page (URL path like `/dam/collections/...`)
+1. Open an Aprimo DAM page (URL path like `/dam/collections/...` or `/dam/spaces/...`)
 2. Click extension icon
 3. Click **Start / Resume**
 4. Optional: enable **Download preview images** if you want local images for later pHash indexing
 5. Export JSON/CSV when done (or even mid-run for partial snapshots)
+
+## Single source + dedupe behavior
+- Assets are stored in one master state keyed by `Item ID`.
+- If the same asset appears in multiple collections/spaces, it is stored once and its `sourceKeys` membership list is expanded.
+- Export includes dedupe/source fields: `seenInCount`, `sourceKeys`, `firstSeenAt`, `lastSeenAt`, `lastSeenSourceKey`.
+
+## Recent updates (Feb 2026)
+- Added support for Aprimo Space URLs (`/dam/spaces/...`) in addition to collection URLs.
+- Added state migration so existing saved crawl progress continues to work without restarting.
+- Added master-state dedupe by `Item ID` across collections and spaces.
+- Added popup completion notifications for:
+	- Successful completion (green)
+	- Completed with errors (yellow)
 
 ## Notes / caveats
 - Uses resilient selectors (`a[href*="/items/"]`, `data-id="fields.ExpirationDate.value"`, etc.) to avoid brittle generated CSS classes.

@@ -13,24 +13,42 @@ function setStatus(text) {
   document.getElementById('status').textContent = text;
 }
 
+function setCompletionNotice(visible) {
+  const el = document.getElementById('completionNotice');
+  if (!el) return;
+  el.classList.toggle('hidden', !visible);
+}
+
+function setCompletionWarningNotice(visible) {
+  const el = document.getElementById('completionWarningNotice');
+  if (!el) return;
+  el.classList.toggle('hidden', !visible);
+}
+
 function renderStats(s = {}) {
   document.getElementById('assetCount').textContent = s.assetCount ?? 0;
   document.getElementById('detailDone').textContent = s.detailDone ?? 0;
   document.getElementById('detailErrors').textContent = s.detailErrors ?? 0;
   document.getElementById('running').textContent = String(!!s.running);
+  setCompletionNotice(!!s.completedSuccessfully);
+  setCompletionWarningNotice(!!s.completedWithErrors);
 }
 
 async function refresh() {
   try {
     const res = await sendToContent({ type: 'DAM_CRAWLER_STATUS' });
     if (!res?.ok) {
+      setCompletionNotice(false);
+      setCompletionWarningNotice(false);
       setStatus(res?.error || 'Not ready on this page');
       return;
     }
     setStatus(res.message || 'Ready');
     renderStats(res.stats);
   } catch (e) {
-    setStatus('Open an Aprimo collection page and reload it.');
+    setCompletionNotice(false);
+    setCompletionWarningNotice(false);
+    setStatus('Open an Aprimo collection or space page and reload it.');
   }
 }
 
