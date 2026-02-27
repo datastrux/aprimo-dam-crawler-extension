@@ -11,8 +11,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'DAM_CRAWLER_DOWNLOAD_URL') {
-        const { url, filename } = msg;
-        const downloadId = await chrome.downloads.download({ url, filename, saveAs: false, conflictAction: 'uniquify' });
+        const { url, filename, overwrite } = msg;
+        const downloadId = await chrome.downloads.download({ url, filename, saveAs: false, conflictAction: overwrite ? 'overwrite' : 'uniquify' });
         sendResponse({ ok: true, downloadId });
         return;
       }

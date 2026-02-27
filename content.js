@@ -15,6 +15,7 @@
     pageOrigin: location.origin,
     source: extractSourceContext(location.href),
     knownSources: {},
+    previewDownloadsByItemId: {},
     discoveredComplete: false,
     lastScrollY: 0,
     authExpired: false,
@@ -82,6 +83,7 @@
     }
 
     migrated.knownSources ||= {};
+    migrated.previewDownloadsByItemId ||= {};
     if (migrated.source?.sourceKey && !migrated.knownSources[migrated.source.sourceKey]) {
       migrated.knownSources[migrated.source.sourceKey] = {
         sourceType: migrated.source.sourceType,
@@ -102,6 +104,9 @@
       asset.firstSeenAt ||= nowIso();
       asset.lastSeenAt ||= nowIso();
       asset.lastSeenSourceKey ||= asset.sourceKeys[asset.sourceKeys.length - 1] || null;
+      if (asset.itemId && asset.downloadedPreview) {
+        migrated.previewDownloadsByItemId[asset.itemId] ||= { filename: null, downloadedAt: nowIso() };
+      }
     }
 
     return migrated;
@@ -262,9 +267,17 @@
         if (incoming.detailFetched && !state.queue.detailDone.includes(incoming.itemId)) {
           state.queue.detailDone.push(incoming.itemId);
         }
+        if (incoming.downloadedPreview) {
+          state.previewDownloadsByItemId ||= {};
+          state.previewDownloadsByItemId[incoming.itemId] ||= { filename: null, downloadedAt: nowIso() };
+        }
         added++;
       } else {
         mergeAsset(existing, incoming);
+        if (existing.downloadedPreview) {
+          state.previewDownloadsByItemId ||= {};
+          state.previewDownloadsByItemId[existing.itemId] ||= { filename: null, downloadedAt: nowIso() };
+        }
         updated++;
       }
     }
@@ -397,6 +410,7 @@
           lastSeenSourceKey: source?.sourceKey || null,
           raw: {}
         };
+        if (state.previewDownloadsByItemId?.[itemId]) state.assets[itemId].downloadedPreview = true;
         added++;
         queueIfMissing(itemId);
       } else {
@@ -413,6 +427,7 @@
         x.seenInCount = x.sourceKeys.length;
         x.lastSeenAt = nowIso();
         x.lastSeenSourceKey = source?.sourceKey || x.lastSeenSourceKey || null;
+        if (state.previewDownloadsByItemId?.[itemId]) x.downloadedPreview = true;
       }
     }
 
@@ -512,13 +527,30 @@
   }
 
   async function requestPreviewDownload(asset) {
-    const current = currentSource();
-    const sourceSegment = current?.sourceId || 'source';
-    const filename = sanitizePath(`aprimo_dam_previews/${sourceSegment}/${asset.itemId}__${asset.fileName || 'asset'}.${asset.fileType || 'bin'}`)
-      .replace(/\.(jpg|jpeg|png|gif|webp)\.(jpg|jpeg|png|gif|webp)$/i, '.$1');
-    const res = await chrome.runtime.sendMessage({ type: 'DAM_CRAWLER_DOWNLOAD_URL', url: asset.previewUrl, filename });
-    if (res?.ok) asset.downloadedPreview = true;
+    if (!asset?.itemId || !asset?.previewUrl) return { ok: false, skipped: true };
+
+    state.previewDownloadsByItemId ||= {};
+    if (state.previewDownloadsByItemId[asset.itemId]) {
+      asset.downloadedPreview = true;
+      return { ok: true, skipped: true, reason: 'already_downloaded' };
+    }
+
+    const previewExt = inferPreviewExt(asset);
+    const filename = sanitizePath(`aprimo_dam_previews/${asset.itemId}.${previewExt}`);
+    const res = await chrome.runtime.sendMessage({ type: 'DAM_CRAWLER_DOWNLOAD_URL', url: asset.previewUrl, filename, overwrite: true });
+    if (res?.ok) {
+      asset.downloadedPreview = true;
+      state.previewDownloadsByItemId[asset.itemId] = { filename, downloadedAt: nowIso() };
+    }
     return res;
+  }
+
+  function inferPreviewExt(asset) {
+    const urlExt = String(asset?.previewUrl || '').match(/\.([a-z0-9]{2,5})(?:[?#].*)?$/i)?.[1]?.toLowerCase();
+    if (urlExt && ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'avif'].includes(urlExt)) return urlExt;
+    const typeExt = String(asset?.fileType || '').toLowerCase();
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'avif'].includes(typeExt)) return typeExt;
+    return 'jpg';
   }
 
   function sanitizePath(s) {
@@ -744,6 +776,7 @@
       pageOrigin: location.origin,
       source: currentSource(),
       knownSources: {},
+      previewDownloadsByItemId: {},
       discoveredComplete: false,
       lastScrollY: 0,
       authExpired: false,
