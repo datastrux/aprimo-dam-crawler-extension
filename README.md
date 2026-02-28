@@ -63,6 +63,7 @@ If login/auth expires:
 - Uses resilient selectors (`a[href*="/items/"]`, `data-id="fields.ExpirationDate.value"`, etc.) to avoid brittle generated CSS classes.
 - If Aprimo detail pages are SPA-only and `fetch(itemUrl)` returns a shell instead of data, the next upgrade is to intercept XHR/fetch payloads or scrape the side panel after clicking each item.
 - Downloading preview images is optional and may require the preview CDN host to be covered by `host_permissions`.
+- Citizensbank URLs compiled from Adobe Analytics and XML Sitemap (02/28/2026)
 
 ## Next upgrades (suggested)
 - Retry queue with exponential backoff and separate `retryable` vs `permanent` errors
