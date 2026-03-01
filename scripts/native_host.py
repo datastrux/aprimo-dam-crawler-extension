@@ -69,13 +69,15 @@ class NativeHost:
             return 1, f"Script not found: {script_name}"
 
         env = os.environ.copy()
-        command = [sys.executable, str(script_path)]
+        env["PYTHONUNBUFFERED"] = "1"
+        command = [sys.executable, "-u", str(script_path)]
         self._current_proc = subprocess.Popen(
             command,
             cwd=str(ROOT),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,
         )
 
         combined_lines: list[str] = []
