@@ -107,10 +107,11 @@ function renderAuditStatus(status = {}) {
   const el = document.getElementById('auditStatus');
   if (!el) return;
   
-  const state = status?.state || 'idle';
+  // Support both "state" field and "running" boolean field
+  const isRunning = (status?.state === 'running') || (status?.running === true);
   const progress = status?.progress;
   
-  if (state === 'running' && progress) {
+  if (isRunning && progress) {
     const current = Number(progress.current);
     const total = Number(progress.total);
     const percent = Number(progress.percent);
@@ -135,6 +136,7 @@ function renderAuditStatus(status = {}) {
     
     el.innerHTML = statusHtml;
   } else {
+    const state = isRunning ? 'running' : (status?.state || 'idle');
     const stage = status?.stage ? ` (${status.stage})` : '';
     const msg = status?.message ? ` - ${status.message}` : '';
     el.textContent = `Audit: ${state}${stage}${msg}`;
