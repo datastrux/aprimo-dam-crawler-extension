@@ -70,6 +70,7 @@ class NativeHost:
 
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
         command = [sys.executable, "-u", str(script_path)]
         self._current_proc = subprocess.Popen(
             command,
@@ -77,42 +78,54 @@ class NativeHost:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            bufsize=1,
+            bufsize=0,
+            env=env,
         )
 
         combined_lines: list[str] = []
         assert self._current_proc.stdout is not None
-        while True:
+        
+        # Use iter() for truly line-by-line reading with immediate processing
+        for line in iter(self._current_proc.stdout.readline, ''):
             if self._stop_event.is_set() and self._current_proc.poll() is None:
                 self._current_proc.terminate()
-            line = self._current_proc.stdout.readline()
-            if line:
-                msg = line.rstrip()
-                sys.stderr.write(f"[NativeHost DEBUG] Line received: {msg[:100]}\n")
-                sys.stderr.flush()
-                if msg.startswith(PROGRESS_PREFIX):
-                    sys.stderr.write(f"[NativeHost DEBUG] Progress prefix detected!\n")
-                    sys.stderr.flush()
-                    progress_raw = msg[len(PROGRESS_PREFIX):].strip()
-                    try:
-                        progress_payload = json.loads(progress_raw)
-                    except json.JSONDecodeError:
-                        combined_lines.append(msg)
-                        self._write_message({"type": "log", "message": msg})
-                    else:
-                        if isinstance(progress_payload, dict):
-                            progress_payload["type"] = "progress"
-                            sys.stderr.write(f"[NativeHost DEBUG] Sending progress to extension\n")
-                            sys.stderr.flush()
-                            self._write_message(progress_payload)
-                        continue
-                combined_lines.append(msg)
-                self._write_message({"type": "log", "message": msg})
-            if self._current_proc.poll() is not None:
                 break
-        rc = self._current_proc.returncode or 0
+            
+            if not line:
+                if self._current_proc.poll() is not None:
+                    break
+                continue
+            
+            msg = line.rstrip()
+            sys.stderr.write(f"[NativeHost DEBUG] Line received: {msg[:100]}\n")
+            sys.stderr.flush()
+            
+            if msg.startswith(PROGRESS_PREFIX):
+                sys.stderr.write(f"[NativeHost DEBUG] Progress prefix detected!\n")
+                sys.stderr.flush()
+                progress_raw = msg[len(PROGRESS_PREFIX):].strip()
+                try:
+                    progress_payload = json.loads(progress_raw)
+                    if isinstance(progress_payload, dict):
+                        progress_payload["type"] = "progress"
+                        sys.stderr.write(f"[NativeHost DEBUG] Sending progress to extension\n")
+                        sys.stderr.flush()
+                        self._write_message(progress_payload)
+                    continue
+                except json.JSONDecodeError as e:
+                    sys.stderr.write(f"[NativeHost DEBUG] JSON parse error: {e}\n")
+                    sys.stderr.flush()
+                    combined_lines.append(msg)
+                    self._write_message({"type": "log", "message": msg})
+                    continue
+            
+            combined_lines.append(msg)
+            self._write_message({"type": "log", "message": msg})
+        
+        # Ensure process has finished
+        rc = self._current_proc.wait() if self._current_proc.poll() is None else self._current_proc.returncode
         self._current_proc = None
-        return rc, "\n".join(combined_lines)
+        return rc or 0, "\n".join(combined_lines)
 
     def _run_pipeline(self, mode: str, stage: str | None) -> None:
         try:
