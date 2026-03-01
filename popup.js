@@ -14,6 +14,13 @@ async function sendToWorker(message) {
 }
 
 let lastStats = {};
+const FALLBACK_AUDIT_STAGES = [
+  '01_crawl_citizens_images.py',
+  '02_build_dam_fingerprints.py',
+  '03_build_citizens_fingerprints.py',
+  '04_match_assets.py',
+  '05_build_reports.py'
+];
 
 async function loadTogglePreferences() {
   const checkbox = document.getElementById('downloadPreviews');
@@ -105,16 +112,95 @@ function renderAuditStatus(status = {}) {
   el.textContent = `Audit: ${state}${stage}${msg}`;
 }
 
+function stageLabel(stageName) {
+  const cleaned = String(stageName || '').replace(/\.py$/i, '');
+  const withoutPrefix = cleaned.replace(/^\d+_/, '');
+  return withoutPrefix.replace(/_/g, ' ');
+}
+
+function renderAuditStages(status = {}) {
+  const container = document.getElementById('auditStages');
+  if (!container) return;
+
+  const provided = Array.isArray(status?.stages) ? status.stages : [];
+  const stages = provided.length
+    ? provided
+    : FALLBACK_AUDIT_STAGES.map((name) => ({ name, status: 'pending', message: null }));
+
+  container.innerHTML = stages.map((stage) => {
+    const stageState = stage?.status || 'pending';
+    const indicator = stageState === 'completed'
+      ? '✓'
+      : stageState === 'error'
+        ? '!'
+        : stageState === 'running'
+          ? '⏳'
+          : '○';
+    const stateText = stageState === 'completed'
+      ? 'Completed'
+      : stageState === 'error'
+        ? (stage?.message || 'Error')
+        : stageState === 'running'
+          ? 'Running'
+          : 'Pending';
+    const stateClass = ['running', 'completed', 'error'].includes(stageState) ? stageState : '';
+    return `<div class="auditStageRow"><span class="auditStageIndicator">${indicator}</span><span class="auditStageName">${stageLabel(stage?.name)}</span><span class="auditStageState ${stateClass}">${stateText}</span></div>`;
+  }).join('');
+}
+
+function renderAuditProgress(status = {}) {
+  const wrap = document.getElementById('auditProgressWrap');
+  const urlText = document.getElementById('auditProgressUrlText');
+  const imageText = document.getElementById('auditProgressImageText');
+  const fill = document.getElementById('auditProgressFill');
+  if (!wrap || !urlText || !imageText || !fill) return;
+
+  const progress = status?.progress;
+  const current = Number(progress?.current);
+  const total = Number(progress?.total);
+  const explicitPercent = Number(progress?.percent);
+  const hasNumbers = Number.isFinite(current) && Number.isFinite(total) && total > 0;
+
+  if (!hasNumbers) {
+    wrap.classList.add('hidden');
+    fill.style.width = '0%';
+    return;
+  }
+
+  const percent = Number.isFinite(explicitPercent)
+    ? explicitPercent
+    : Math.round((current / total) * 10000) / 100;
+  const imagesDiscovered = Number(progress?.images_discovered);
+  const imagesPending = Number(progress?.images_pending);
+  const hasImageMetrics = Number.isFinite(imagesDiscovered);
+  const boundedPercent = Math.max(0, Math.min(100, percent));
+  const resumedTag = progress?.resumed ? ' • resumed' : '';
+  const message = progress?.message ? ` • ${progress.message}` : '';
+
+  wrap.classList.remove('hidden');
+  fill.style.width = `${boundedPercent}%`;
+  urlText.textContent = `URLs: ${current}/${total} (${boundedPercent.toFixed(2)}%)${resumedTag}${message}`;
+  imageText.textContent = hasImageMetrics
+    ? `Images: ${imagesDiscovered} (${Number.isFinite(imagesPending) ? Math.max(0, imagesPending) : 0} pending)`
+    : 'Images: collecting...';
+}
+
 async function refreshAuditStatus() {
   try {
     const res = await sendToWorker({ type: 'DAM_AUDIT_STATUS' });
     if (!res?.ok) {
       renderAuditStatus({ state: 'error', message: res?.error || 'Unable to load audit status' });
+      renderAuditStages({});
+      renderAuditProgress({});
       return;
     }
     renderAuditStatus(res.status || {});
+    renderAuditStages(res.status || {});
+    renderAuditProgress(res.status || {});
   } catch (err) {
     renderAuditStatus({ state: 'error', message: String(err?.message || err) });
+    renderAuditStages({});
+    renderAuditProgress({});
   }
 }
 

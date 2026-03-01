@@ -84,15 +84,23 @@ This repo now includes a local Python audit pipeline to:
 The extension can trigger the local Python pipeline through Chrome Native Messaging.
 
 1. Get your extension ID from `chrome://extensions` (enable Developer mode).
-2. Register native host:
-	- `powershell -ExecutionPolicy Bypass -File scripts/register_native_host.ps1 -ExtensionId <YOUR_EXTENSION_ID>`
-3. Reload the extension in Chrome.
-4. In popup, use **Run Audit Pipeline** / **Stop Audit** and watch **Audit: ...** status.
+2. Open PowerShell in the repo root and run the same sequence that was validated:
+	- `cd C:\Users\colle\Downloads\aprimo_dam_crawler_extension`
+	- `& .\.venv\Scripts\Activate.ps1`
+	- `pip install -r .\scripts\requirements-audit.txt`
+	- `$extId = "<YOUR_EXTENSION_ID>"`
+	- `powershell -ExecutionPolicy Bypass -File .\scripts\register_native_host.ps1 -ExtensionId $extId -PythonExe "$PWD\.venv\Scripts\python.exe" -HostScript "$PWD\scripts\native_host.py"`
+3. Verify registration:
+	- `Get-ItemProperty "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.datastrux.dam_audit_host"`
+	- `Get-Content "$env:LOCALAPPDATA\AprimoDamAuditNativeHost\com.datastrux.dam_audit_host.json"`
+4. Reload the extension in Chrome.
+5. In popup, use **Run Audit Pipeline** / **Stop Audit** and watch **Audit: ...** plus live progress during stage 01.
 
 Notes:
 - Native host name: `com.datastrux.dam_audit_host`
 - Host script: `scripts/native_host.py`
 - Host manifest template: `scripts/native_host_manifest.template.json`
+- Registration script writes launcher: `%LOCALAPPDATA%\AprimoDamAuditNativeHost\run_dam_audit_host.cmd`
 
 ### Script order
 - `scripts/01_crawl_citizens_images.py`
@@ -146,3 +154,13 @@ The crawler captures redirect journey per page in `assets/audit/citizens_pages.j
 - `final_url`
 
 Crawler requests use a realistic Mozilla/Chrome desktop user agent string.
+
+### Stage 01 progress + resume behavior
+
+- Stage 01 (`scripts/01_crawl_citizens_images.py`) now emits structured progress (`current/total/percent`) consumed by the extension popup progress bar.
+- Popup progress now shows both URL and image queue metrics during stage 01:
+	- `URLs: <current>/<total> (<percent>%)`
+	- `Images: <discovered> (<pending> pending)`
+- If interrupted, stage 01 resumes automatically from `assets/audit/citizens_crawl_checkpoint.json` on next run.
+- To force a fresh stage-01 crawl, run:
+	- `python scripts/01_crawl_citizens_images.py --no-resume`

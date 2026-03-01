@@ -22,6 +22,8 @@ PIPELINE_STAGES = [
     "05_build_reports.py",
 ]
 
+PROGRESS_PREFIX = "AUDIT_PROGRESS "
+
 
 class NativeHost:
     def __init__(self) -> None:
@@ -84,6 +86,18 @@ class NativeHost:
             line = self._current_proc.stdout.readline()
             if line:
                 msg = line.rstrip()
+                if msg.startswith(PROGRESS_PREFIX):
+                    progress_raw = msg[len(PROGRESS_PREFIX):].strip()
+                    try:
+                        progress_payload = json.loads(progress_raw)
+                    except json.JSONDecodeError:
+                        combined_lines.append(msg)
+                        self._write_message({"type": "log", "message": msg})
+                    else:
+                        if isinstance(progress_payload, dict):
+                            progress_payload["type"] = "progress"
+                            self._write_message(progress_payload)
+                        continue
                 combined_lines.append(msg)
                 self._write_message({"type": "log", "message": msg})
             if self._current_proc.poll() is not None:
@@ -113,6 +127,7 @@ class NativeHost:
                     return
 
                 self._send_status("running", message=f"Running {stage_name}", stage=stage_name)
+                self._write_message({"type": "stage_start", "stage": stage_name})
                 rc, output = self._run_script(stage_name)
                 if rc != 0:
                     self._write_message({
@@ -122,6 +137,7 @@ class NativeHost:
                         "output": output,
                     })
                     return
+                self._write_message({"type": "stage_complete", "stage": stage_name})
 
             self._write_message({
                 "type": "complete",

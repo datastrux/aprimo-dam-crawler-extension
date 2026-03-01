@@ -38,6 +38,12 @@
         <button id="auditRunBtn">Run Audit Pipeline</button>
         <button id="auditStopBtn">Stop Audit</button>
       </div>
+      <div id="auditStages" class="auditStages"></div>
+      <div id="auditProgressWrap" class="auditProgress hidden">
+        <div id="auditProgressUrlText" class="auditProgressText">URLs: 0/0 (0%)</div>
+        <div id="auditProgressImageText" class="auditProgressSubtext">Images: 0 (0 pending)</div>
+        <div class="auditProgressBar"><div id="auditProgressFill" class="auditProgressFill"></div></div>
+      </div>
       <div id="auditStatus" class="status small">Audit: idle</div>
     </div>
 

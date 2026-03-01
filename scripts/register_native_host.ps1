@@ -29,10 +29,13 @@ if (-not (Test-Path $templatePath)) {
 $hostDir = Join-Path $env:LOCALAPPDATA "AprimoDamAuditNativeHost"
 New-Item -ItemType Directory -Force -Path $hostDir | Out-Null
 
+$launcherPath = Join-Path $hostDir "run_dam_audit_host.cmd"
+$launcher = "@echo off`r`n`"$PythonExe`" `"$HostScript`"`r`n"
+Set-Content -Path $launcherPath -Value $launcher -Encoding Ascii
+
 $manifestPath = Join-Path $hostDir "com.datastrux.dam_audit_host.json"
 $template = Get-Content -Raw -Path $templatePath
-$template = $template.Replace("__PYTHON_EXE__", ($PythonExe -replace '\\', '\\\\'))
-$template = $template.Replace("__HOST_SCRIPT__", ($HostScript -replace '\\', '\\\\'))
+$template = $template.Replace("__HOST_LAUNCHER__", ($launcherPath -replace '\\', '\\\\'))
 $template = $template.Replace("__EXTENSION_ID__", $ExtensionId)
 Set-Content -Path $manifestPath -Value $template -Encoding UTF8
 
@@ -44,5 +47,6 @@ Set-ItemProperty -Path $regPath -Name "(default)" -Value $manifestPath
 
 Write-Host "Native host registered."
 Write-Host "Manifest: $manifestPath"
+Write-Host "Launcher: $launcherPath"
 Write-Host "Registry: $regPath"
 Write-Host "Extension ID: $ExtensionId"
