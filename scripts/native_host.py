@@ -88,7 +88,11 @@ class NativeHost:
             line = self._current_proc.stdout.readline()
             if line:
                 msg = line.rstrip()
+                sys.stderr.write(f"[NativeHost DEBUG] Line received: {msg[:100]}\n")
+                sys.stderr.flush()
                 if msg.startswith(PROGRESS_PREFIX):
+                    sys.stderr.write(f"[NativeHost DEBUG] Progress prefix detected!\n")
+                    sys.stderr.flush()
                     progress_raw = msg[len(PROGRESS_PREFIX):].strip()
                     try:
                         progress_payload = json.loads(progress_raw)
@@ -98,6 +102,8 @@ class NativeHost:
                     else:
                         if isinstance(progress_payload, dict):
                             progress_payload["type"] = "progress"
+                            sys.stderr.write(f"[NativeHost DEBUG] Sending progress to extension\n")
+                            sys.stderr.flush()
                             self._write_message(progress_payload)
                         continue
                 combined_lines.append(msg)

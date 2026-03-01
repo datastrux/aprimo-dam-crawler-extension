@@ -217,11 +217,15 @@ function renderAuditProgress(status = {}) {
 async function refreshAuditStatus() {
   try {
     const res = await sendToWorker({ type: 'DAM_AUDIT_STATUS' });
+    console.log('[Popup DEBUG] Status response:', JSON.stringify(res, null, 2));
     if (!res?.ok) {
       renderAuditStatus({ state: 'error', message: res?.error || 'Unable to load audit status' });
       renderAuditStages({});
       renderAuditProgress({});
       return;
+    }
+    if (res.status?.progress) {
+      console.log('[Popup DEBUG] Progress data:', JSON.stringify(res.status.progress, null, 2));
     }
     renderAuditStatus(res.status || {});
     renderAuditStages(res.status || {});

@@ -109,6 +109,7 @@ function handleAuditHostMessage(msg) {
     return;
   }
   if (type === 'progress') {
+    console.log('[Worker DEBUG] Progress message received:', JSON.stringify(msg, null, 2));
     const current = Number(msg.current);
     const total = Number(msg.total);
     const explicitPercent = Number(msg.percent);
@@ -128,6 +129,7 @@ function handleAuditHostMessage(msg) {
       images_discovered: Number.isFinite(imagesDiscovered) ? imagesDiscovered : 0,
       images_pending: Number.isFinite(imagesPending) ? imagesPending : 0
     };
+    console.log('[Worker DEBUG] Updated auditRuntime.progress:', JSON.stringify(auditRuntime.progress, null, 2));
     if (msg.message) {
       auditRuntime.message = msg.message;
     }
