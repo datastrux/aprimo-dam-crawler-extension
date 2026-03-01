@@ -70,3 +70,55 @@ If login/auth expires:
 - Background orchestration for large collections
 - Side-panel scrape mode (click cards + parse visible panel)
 - Export `page->image usage` and pHash pipeline companion scripts (Python)
+
+## Citizens vs DAM audit pipeline (Python)
+
+This repo now includes a local Python audit pipeline to:
+- Crawl `www.citizensbank.com` page URLs from `assets/citizensbank_urls.txt`
+- Build fingerprints for Citizens images and DAM preview images
+- Match Citizens images to DAM (exact hash first, then pHash)
+- Produce filterable outputs in XLSX and HTML
+
+### Script order
+- `scripts/01_crawl_citizens_images.py`
+- `scripts/02_build_dam_fingerprints.py`
+- `scripts/03_build_citizens_fingerprints.py`
+- `scripts/04_match_assets.py`
+- `scripts/05_build_reports.py`
+
+Or run all stages:
+- `scripts/run_audit_pipeline.py`
+
+### Setup
+1. Install Python dependencies:
+	 - `pip install -r scripts/requirements-audit.txt`
+2. Ensure inputs exist:
+	 - `assets/citizensbank_urls.txt`
+	 - `assets/aprimo_dam_assets_master_*.json`
+
+### Run
+- Full pipeline:
+	- `python scripts/run_audit_pipeline.py`
+
+### Outputs
+- Intermediate data: `assets/audit/`
+	- `citizens_pages.json`
+	- `citizens_images.json`
+	- `citizens_images_index.json`
+	- `dam_fingerprints.json`
+	- `citizens_fingerprints.json`
+	- `match_results.json`
+	- `unmatched_results.json`
+	- `dam_internal_dupes.json`
+	- `audit_master.csv`
+	- `audit_master.json`
+	- `audit_summary.json`
+- Analyst-facing reports:
+	- `reports/citizens_dam_audit.xlsx`
+	- `reports/audit_report.html`
+
+### Report flags
+- `match_exact`: Citizens image has exact DAM hash match
+- `match_phash`: Citizens image has pHash-based DAM match
+- `unmatched` / `unmatched_error`: no DAM match or fingerprint error
+- `needs_dam_upload = true`: Citizens-served image still needs DAM onboarding
