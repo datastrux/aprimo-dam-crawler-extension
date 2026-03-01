@@ -106,10 +106,39 @@ async function refresh() {
 function renderAuditStatus(status = {}) {
   const el = document.getElementById('auditStatus');
   if (!el) return;
+  
   const state = status?.state || 'idle';
-  const stage = status?.stage ? ` (${status.stage})` : '';
-  const msg = status?.message ? ` - ${status.message}` : '';
-  el.textContent = `Audit: ${state}${stage}${msg}`;
+  const progress = status?.progress;
+  
+  if (state === 'running' && progress) {
+    const current = Number(progress.current);
+    const total = Number(progress.total);
+    const percent = Number(progress.percent);
+    const imagesDiscovered = Number(progress.images_discovered);
+    const imagesPending = Number(progress.images_pending);
+    
+    let statusHtml = `Audit: running`;
+    if (status.stage) {
+      statusHtml += ` (${status.stage})`;
+    }
+    
+    if (Number.isFinite(current) && Number.isFinite(total)) {
+      statusHtml += `<br>URLs: ${current}/${total} (${percent.toFixed(1)}%)`;
+    }
+    
+    if (Number.isFinite(imagesDiscovered)) {
+      statusHtml += `<br>Images: ${imagesDiscovered} discovered`;
+      if (Number.isFinite(imagesPending)) {
+        statusHtml += ` (${imagesPending} pending)`;
+      }
+    }
+    
+    el.innerHTML = statusHtml;
+  } else {
+    const stage = status?.stage ? ` (${status.stage})` : '';
+    const msg = status?.message ? ` - ${status.message}` : '';
+    el.textContent = `Audit: ${state}${stage}${msg}`;
+  }
 }
 
 function stageLabel(stageName) {
