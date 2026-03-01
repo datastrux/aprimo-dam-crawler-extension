@@ -19,6 +19,9 @@ button:hover { background: #f0f3f7; }
 button.danger { border-color: #cc6b6b; }
 .stats { margin: 10px 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .stats div span { color: #555; }
+.auditBox { margin: 10px 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px; }
+.auditTitle { font-weight: 600; margin-bottom: 6px; }
+.status.small { margin-top: 8px; margin-bottom: 0; font-size: 12px; padding: 6px; }
 .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
 .note { color: #555; font-size: 12px; }
 code { background: #eef1f5; padding: 1px 4px; border-radius: 4px; }

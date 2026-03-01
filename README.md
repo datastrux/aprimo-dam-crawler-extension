@@ -79,6 +79,21 @@ This repo now includes a local Python audit pipeline to:
 - Match Citizens images to DAM (exact hash first, then pHash)
 - Produce filterable outputs in XLSX and HTML
 
+### Run from extension via Native Messaging (Windows)
+
+The extension can trigger the local Python pipeline through Chrome Native Messaging.
+
+1. Get your extension ID from `chrome://extensions` (enable Developer mode).
+2. Register native host:
+	- `powershell -ExecutionPolicy Bypass -File scripts/register_native_host.ps1 -ExtensionId <YOUR_EXTENSION_ID>`
+3. Reload the extension in Chrome.
+4. In popup, use **Run Audit Pipeline** / **Stop Audit** and watch **Audit: ...** status.
+
+Notes:
+- Native host name: `com.datastrux.dam_audit_host`
+- Host script: `scripts/native_host.py`
+- Host manifest template: `scripts/native_host_manifest.template.json`
+
 ### Script order
 - `scripts/01_crawl_citizens_images.py`
 - `scripts/02_build_dam_fingerprints.py`
@@ -122,3 +137,12 @@ Or run all stages:
 - `match_phash`: Citizens image has pHash-based DAM match
 - `unmatched` / `unmatched_error`: no DAM match or fingerprint error
 - `needs_dam_upload = true`: Citizens-served image still needs DAM onboarding
+
+### Redirect tracking (302/301 hop journey)
+
+The crawler captures redirect journey per page in `assets/audit/citizens_pages.json`:
+- `redirect_count`
+- `redirect_hops[]` with `status_code`, `from_url`, `response_url`, `location`, `to_url`
+- `final_url`
+
+Crawler requests use a realistic Mozilla/Chrome desktop user agent string.

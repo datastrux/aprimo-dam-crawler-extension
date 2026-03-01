@@ -3,7 +3,7 @@
   "name": "Aprimo DAM Collection Crawler",
   "version": "0.2.0",
   "description": "Crawl Aprimo DAM collection and space pages, extract asset metadata, resume after interruption, and export JSON/CSV.",
-  "permissions": ["storage", "unlimitedStorage", "downloads", "activeTab", "scripting"],
+  "permissions": ["storage", "unlimitedStorage", "downloads", "activeTab", "scripting", "nativeMessaging"],
   "host_permissions": [
     "https://*.aprimo.com/*",
     "https://r1.previews.aprimo.com/*",
@@ -14,17 +14,17 @@
     "type": "module"
   },
   "icons": {
-    "16": "images/icon.png",
-    "32": "images/icon.png",
-    "48": "images/icon.png",
-    "128": "images/icon.png"
+    "16": "assets/images/icon.png",
+    "32": "assets/images/icon.png",
+    "48": "assets/images/icon.png",
+    "128": "assets/images/icon.png"
   },
   "action": {
     "default_title": "DAM Crawler",
     "default_popup": "popup.html",
     "default_icon": {
-      "16": "images/icon.png",
-      "32": "images/icon.png"
+      "16": "assets/images/icon.png",
+      "32": "assets/images/icon.png"
     }
   },
   "content_scripts": [

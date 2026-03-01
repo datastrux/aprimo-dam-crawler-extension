@@ -1,0 +1,12 @@
+{
+  "name": "com.datastrux.dam_audit_host",
+  "description": "Local Python host for Aprimo DAM audit pipeline",
+  "path": "__PYTHON_EXE__",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://__EXTENSION_ID__/"
+  ],
+  "args": [
+    "__HOST_SCRIPT__"
+  ]
+}

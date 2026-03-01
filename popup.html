@@ -14,7 +14,7 @@
     <div id="completionWarningNotice" class="notice warning hidden">Crawl completed with errors. Review the Errors count and export for details.</div>
 
     <div class="grid">
-      <button id="toggleRunBtn" class="icon-btn"><img id="toggleRunIcon" src="images/play.png" alt="Start" /><span id="toggleRunLabel">Start / Resume</span></button>
+      <button id="toggleRunBtn" class="icon-btn"><img id="toggleRunIcon" src="assets/images/play.png" alt="Start" /><span id="toggleRunLabel">Start / Resume</span></button>
       <button id="scanBtn">Scan Visible</button>
       <button id="recheckBtn">Recheck Incomplete</button>
       <button id="exportBtn">Export JSON</button>
@@ -30,6 +30,15 @@
       <div><span>Detail Done:</span> <strong id="detailDone">0</strong></div>
       <div><span>Errors:</span> <strong id="detailErrors">0</strong></div>
       <div><span>Running:</span> <strong id="running">false</strong></div>
+    </div>
+
+    <div class="auditBox">
+      <div class="auditTitle">Audit Pipeline (Python)</div>
+      <div class="grid">
+        <button id="auditRunBtn">Run Audit Pipeline</button>
+        <button id="auditStopBtn">Stop Audit</button>
+      </div>
+      <div id="auditStatus" class="status small">Audit: idle</div>
     </div>
 
     <label class="row">

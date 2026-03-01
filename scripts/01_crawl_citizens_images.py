@@ -21,7 +21,8 @@ from audit_common import (
 )
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; citizens-audit-bot/1.0)",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 
@@ -62,12 +63,38 @@ def crawl(urls: list[str], timeout: int) -> tuple[list[dict], list[dict]]:
             "url": url,
             "status": "ok",
             "http_status": None,
+            "final_url": None,
+            "redirect_count": 0,
+            "redirect_hops": [],
             "error": None,
             "image_count": 0,
         }
         try:
             resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
             row["http_status"] = resp.status_code
+            row["final_url"] = normalize_url(resp.url)
+
+            hops = []
+            previous_url = url
+            for hop in resp.history:
+                hop_from = normalize_url(previous_url)
+                hop_response_url = normalize_url(hop.url)
+                location = hop.headers.get("Location")
+                hop_to = normalize_url(safe_join(hop_response_url, location)) if location else hop_response_url
+                hops.append(
+                    {
+                        "status_code": hop.status_code,
+                        "from_url": hop_from,
+                        "response_url": hop_response_url,
+                        "location": location,
+                        "to_url": hop_to,
+                    }
+                )
+                previous_url = hop_to
+
+            row["redirect_hops"] = hops
+            row["redirect_count"] = len(hops)
+
             if not resp.ok:
                 row["status"] = "error"
                 row["error"] = f"HTTP_{resp.status_code}"

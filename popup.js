@@ -9,6 +9,10 @@ async function sendToContent(message) {
   return chrome.tabs.sendMessage(tab.id, message);
 }
 
+async function sendToWorker(message) {
+  return chrome.runtime.sendMessage(message);
+}
+
 let lastStats = {};
 
 async function loadTogglePreferences() {
@@ -61,7 +65,7 @@ function renderRunToggleButton(isRunning) {
   const icon = document.getElementById('toggleRunIcon');
   if (label) label.textContent = isRunning ? 'Pause' : 'Start / Resume';
   if (icon) {
-    icon.src = isRunning ? 'images/pause.png' : 'images/play.png';
+    icon.src = isRunning ? 'assets/images/pause.png' : 'assets/images/play.png';
     icon.alt = isRunning ? 'Pause' : 'Start';
   }
 }
@@ -90,6 +94,50 @@ async function refresh() {
     setCompletionWarningNotice(false);
     setStatus('Open an Aprimo collection or space page and reload it.');
   }
+}
+
+function renderAuditStatus(status = {}) {
+  const el = document.getElementById('auditStatus');
+  if (!el) return;
+  const state = status?.state || 'idle';
+  const stage = status?.stage ? ` (${status.stage})` : '';
+  const msg = status?.message ? ` - ${status.message}` : '';
+  el.textContent = `Audit: ${state}${stage}${msg}`;
+}
+
+async function refreshAuditStatus() {
+  try {
+    const res = await sendToWorker({ type: 'DAM_AUDIT_STATUS' });
+    if (!res?.ok) {
+      renderAuditStatus({ state: 'error', message: res?.error || 'Unable to load audit status' });
+      return;
+    }
+    renderAuditStatus(res.status || {});
+  } catch (err) {
+    renderAuditStatus({ state: 'error', message: String(err?.message || err) });
+  }
+}
+
+async function clickAuditRun() {
+  const res = await sendToWorker({ type: 'DAM_AUDIT_START', mode: 'pipeline' });
+  if (!res?.ok) {
+    setStatus(res?.error || 'Failed to start audit pipeline');
+    await refreshAuditStatus();
+    return;
+  }
+  setStatus('Audit pipeline started.');
+  await refreshAuditStatus();
+}
+
+async function clickAuditStop() {
+  const res = await sendToWorker({ type: 'DAM_AUDIT_STOP' });
+  if (!res?.ok) {
+    setStatus(res?.error || 'Failed to stop audit pipeline');
+    await refreshAuditStatus();
+    return;
+  }
+  setStatus('Audit stop requested.');
+  await refreshAuditStatus();
 }
 
 async function clickStart() {
@@ -190,9 +238,13 @@ document.getElementById('exportCsvBtn').addEventListener('click', () => clickExp
 document.getElementById('importBtn').addEventListener('click', () => clickImportJson().catch(e => setStatus(String(e))));
 document.getElementById('importFileInput').addEventListener('change', (e) => handleImportFileChange(e).catch(err => setStatus(String(err))));
 document.getElementById('resetBtn').addEventListener('click', () => clickReset().catch(e => setStatus(String(e))));
+document.getElementById('auditRunBtn').addEventListener('click', () => clickAuditRun().catch(e => setStatus(String(e))));
+document.getElementById('auditStopBtn').addEventListener('click', () => clickAuditStop().catch(e => setStatus(String(e))));
 
 refresh();
 setInterval(refresh, 2000);
+refreshAuditStatus();
+setInterval(refreshAuditStatus, 2000);
 loadTogglePreferences().catch(() => {});
 document.getElementById('downloadPreviews').addEventListener('change', () => {
   saveTogglePreferences().catch(() => {});
