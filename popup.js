@@ -363,7 +363,7 @@ document.getElementById('auditStopBtn').addEventListener('click', () => clickAud
 refresh();
 setInterval(refresh, 2000);
 refreshAuditStatus();
-setInterval(refreshAuditStatus, 2000);
+setInterval(refreshAuditStatus, 500);  // Poll every 500ms for responsive audit progress
 loadTogglePreferences().catch(() => {});
 document.getElementById('downloadPreviews').addEventListener('change', () => {
   saveTogglePreferences().catch(() => {});
