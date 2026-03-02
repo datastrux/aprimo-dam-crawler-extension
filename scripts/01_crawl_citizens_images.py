@@ -11,12 +11,14 @@ from bs4 import BeautifulSoup
 
 from audit_common import (
     AUDIT_DIR,
+    CITIZENS_IMAGES_SCHEMA,
     CITIZENS_URLS_PATH,
     allowed_image_extension,
     ensure_dirs,
     normalize_url,
     read_url_list,
     safe_join,
+    validate_stage_output,
     write_json,
 )
 
@@ -303,6 +305,9 @@ def main() -> None:
         "page_output": str(page_out),
         "image_output": str(image_out),
     }, indent=2))
+
+    # Validate output
+    validate_stage_output(image_out, CITIZENS_IMAGES_SCHEMA, "citizens_images_index")
 
 
 if __name__ == "__main__":

@@ -160,3 +160,108 @@ def allowed_image_extension(url: str) -> bool:
     if path.endswith(disallowed):
         return False
     return True
+
+
+# JSON Schema definitions for validation
+CITIZENS_IMAGES_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["image_url"],
+        "properties": {
+            "image_url": {"type": "string"},
+            "page_count": {"type": "integer"},
+            "page_urls": {"type": "array", "items": {"type": "string"}}
+        }
+    }
+}
+
+DAM_FINGERPRINTS_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["item_id"],
+        "properties": {
+            "item_id": {"type": "string"},
+            "sha256": {"type": ["string", "null"]},
+            "phash": {"type": ["string", "null"]}
+        }
+    }
+}
+
+CITIZENS_FINGERPRINTS_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "required": ["image_url", "fingerprint_status"],
+        "properties": {
+            "image_url": {"type": "string"},
+            "sha256": {"type": ["string", "null"]},
+            "phash": {"type": ["string", "null"]},
+            "fingerprint_status": {"type": "string"}
+        }
+    }
+}
+
+
+def validate_json_schema(data: Any, schema: dict, schema_name: str = "data") -> bool:
+    """Validate JSON data against a schema.
+    
+    Args:
+        data: The data to validate
+        schema: JSON schema dict
+        schema_name: Name for error messages
+    
+    Returns:
+        True if valid, False otherwise
+    
+    Note:
+        Requires jsonschema package. If not installed, returns True (no validation).
+    """
+    try:
+        import jsonschema
+        jsonschema.validate(instance=data, schema=schema)
+        return True
+    except ImportError:
+        # jsonschema not installed - skip validation
+        import sys
+        sys.stderr.write(f"[Warning] jsonschema not installed - skipping {schema_name} validation\n")
+        return True
+    except jsonschema.ValidationError as e:
+        import sys
+        sys.stderr.write(f"[ValidationError] {schema_name} validation failed:\n")
+        sys.stderr.write(f"  Path: {' -> '.join(str(p) for p in e.path)}\n")
+        sys.stderr.write(f"  Error: {e.message}\n")
+        return False
+    except Exception as e:
+        import sys
+        sys.stderr.write(f"[Error] Unexpected validation error for {schema_name}: {e}\n")
+        return False
+
+
+def validate_stage_output(file_path: Path, schema: dict, schema_name: str) -> bool:
+    """Validate a stage output file against its schema.
+    
+    Args:
+        file_path: Path to JSON file
+        schema: JSON schema dict
+        schema_name: Name for error messages
+    
+    Returns:
+        True if valid, False otherwise
+    """
+    if not file_path.exists():
+        import sys
+        sys.stderr.write(f"[Error] File not found: {file_path}\n")
+        return False
+    
+    try:
+        data = load_json(file_path)
+        result = validate_json_schema(data, schema, schema_name)
+        if result:
+            print(f"✓ {file_path.name} validated successfully ({len(data)} items)")
+        return result
+    except json.JSONDecodeError as e:
+        import sys
+        sys.stderr.write(f"[Error] Invalid JSON in {file_path.name}: {e}\n")
+        return False

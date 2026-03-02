@@ -9,7 +9,17 @@ import imagehash
 import requests
 from PIL import Image
 
-from audit_common import AUDIT_DIR, ensure_dirs, latest_dam_export, load_json, normalize_url, sha256_bytes, write_json
+from audit_common import (
+    AUDIT_DIR,
+    DAM_FINGERPRINTS_SCHEMA,
+    ensure_dirs,
+    latest_dam_export,
+    load_json,
+    normalize_url,
+    sha256_bytes,
+    validate_stage_output,
+    write_json,
+)
 
 
 def image_phash(data: bytes) -> str | None:
@@ -89,6 +99,9 @@ def main() -> None:
         "errors": sum(1 for r in rows if r["fingerprint_status"] == "error"),
         "output": str(output),
     }, indent=2))
+
+    # Validate output
+    validate_stage_output(output, DAM_FINGERPRINTS_SCHEMA, "dam_fingerprints")
 
 
 if __name__ == "__main__":
