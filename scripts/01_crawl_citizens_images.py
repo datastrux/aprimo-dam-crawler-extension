@@ -31,6 +31,7 @@ CHECKPOINT_PATH = AUDIT_DIR / "citizens_crawl_checkpoint.json"
 CHECKPOINT_VERSION = 1
 SAVE_EVERY_PAGES = 20
 PROGRESS_PREFIX = "AUDIT_PROGRESS "
+VERBOSE = False  # Set via --verbose flag
 
 
 def emit_progress(
@@ -107,27 +108,71 @@ def materialize_image_rows(image_key_set: set[tuple[str, str, str]]) -> list[dic
 def parse_images_from_html(page_url: str, html: str) -> set[str]:
     soup = BeautifulSoup(html, "html.parser")
     images: set[str] = set()
+    img_tags = soup.find_all("img")
+    
+    if VERBOSE:
+        print(f"  DEBUG: Found {len(img_tags)} <img> tags on {page_url}")
 
-    for img in soup.find_all("img"):
-        src = img.get("src")
-        if src:
+    for img in img_tags:
+        # Check multiple attributes (modern sites use lazy loading)
+        src = (
+            img.get("src") or 
+            img.get("data-src") or 
+            img.get("data-lazy-src") or 
+            img.get("data-original") or
+            img.get("data-srcset") or
+            img.get("data-lazy") or
+            img.get("data-raw")
+        )
+        if src and not src.startswith("data:"):  # Skip data URIs
             resolved = safe_join(page_url, src)
             if resolved and allowed_image_extension(resolved):
                 images.add(resolved)
+                if VERBOSE:
+                    print(f"    ✓ Accepted: {resolved}")
+            elif resolved and VERBOSE:
+                print(f"    ✗ Rejected (extension): {resolved}")
+        elif src and VERBOSE and src.startswith("data:"):
+            print(f"    ⊘ Skipped (data URI): {src[:50]}...")
 
-        srcset = img.get("srcset")
+        srcset = img.get("srcset") or img.get("data-srcset")
         if srcset:
             for part in srcset.split(","):
                 candidate = part.strip().split(" ")[0]
-                resolved = safe_join(page_url, candidate)
-                if resolved and allowed_image_extension(resolved):
-                    images.add(resolved)
+                if candidate and not candidate.startswith("data:"):
+                    resolved = safe_join(page_url, candidate)
+                    if resolved and allowed_image_extension(resolved):
+                        images.add(resolved)
+                        if VERBOSE:
+                            print(f"    ✓ Accepted (srcset): {resolved}")
+    
+    # Check <picture> <source> elements
+    for source in soup.find_all("source"):
+        srcset = source.get("srcset") or source.get("data-srcset")
+        if srcset:
+            for part in srcset.split(","):
+                candidate = part.strip().split(" ")[0]
+                if candidate and not candidate.startswith("data:"):
+                    resolved = safe_join(page_url, candidate)
+                    if resolved and allowed_image_extension(resolved):
+                        images.add(resolved)
+                        if VERBOSE:
+                            print(f"    ✓ Accepted (picture): {resolved}")
 
+    # Also check for background images in style attributes and CSS
     style_urls = re.findall(r"url\((['\"]?)(.*?)\1\)", html, flags=re.IGNORECASE)
+    if VERBOSE and style_urls:
+        print(f"  DEBUG: Found {len(style_urls)} CSS url() references")
     for _, candidate in style_urls:
-        resolved = safe_join(page_url, candidate)
-        if resolved and allowed_image_extension(resolved):
-            images.add(resolved)
+        if candidate and not candidate.startswith("data:"):
+            resolved = safe_join(page_url, candidate)
+            if resolved and allowed_image_extension(resolved):
+                images.add(resolved)
+                if VERBOSE:
+                    print(f"    ✓ Accepted (CSS): {resolved}")
+    
+    if VERBOSE:
+        print(f"  DEBUG: Total unique images found: {len(images)}")
 
     return images
 
@@ -250,12 +295,15 @@ def crawl(urls: list[str], timeout: int, resume: bool) -> tuple[list[dict], list
 
 
 def main() -> None:
+    global VERBOSE
     parser = argparse.ArgumentParser(description="Crawl citizensbank URLs and extract served image URLs")
     parser.add_argument("--urls", type=Path, default=CITIZENS_URLS_PATH)
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--no-resume", dest="resume", action="store_false", help="Ignore checkpoint and start stage 01 from scratch")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging for debugging")
     parser.set_defaults(resume=True)
     args = parser.parse_args()
+    VERBOSE = args.verbose
 
     ensure_dirs()
     urls = read_url_list(args.urls)
