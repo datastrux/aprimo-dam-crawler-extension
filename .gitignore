@@ -27,8 +27,14 @@ Thumbs.db
 # Audit Pipeline Data
 # These files contain sensitive/proprietary data and are large (>100MB)
 # See assets/audit/README.md for setup instructions
-assets/audit/*.json          # DAM asset catalog and generated fingerprints
-assets/audit/*.txt           # URL lists and crawl data (except .gitkeep)
-assets/audit/*.log           # Runtime logs and debug output
-!assets/audit/README.md      # Keep documentation
-!assets/audit/.gitkeep       # Track directory structure
+# Patterns:
+#   - *.json: DAM asset catalog and generated fingerprints
+#   - *.txt: URL lists and crawl data
+#   - *.log: Runtime logs and debug output
+#   - *.bak: Backup files
+assets/audit/*.json
+assets/audit/*.txt
+assets/audit/*.log
+assets/audit/*.bak
+!assets/audit/README.md
+!assets/audit/.gitkeep
