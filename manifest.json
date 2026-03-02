@@ -9,6 +9,9 @@
     "https://r1.previews.aprimo.com/*",
     "https://*.previews.aprimo.com/*"
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none';"
+  },
   "background": {
     "service_worker": "worker.js",
     "type": "module"

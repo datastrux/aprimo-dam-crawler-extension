@@ -18,3 +18,8 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Security - NEVER COMMIT
+.audit_secret
+*.key
+*.pem

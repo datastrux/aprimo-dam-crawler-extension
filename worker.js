@@ -1,5 +1,7 @@
 // Background worker for downloads and native-host audit orchestration.
 
+import { encryptedStorage } from './encrypted_storage.js';
+
 const AUDIT_NATIVE_HOST = 'com.datastrux.dam_audit_host';
 const AUDIT_STAGES = [
   '01_crawl_citizens_images.py',
@@ -19,7 +21,7 @@ function createStageStates() {
 
 const auditRuntime = {
   running: false,
-  state: 'idle',
+  state: 'idle',  // idle | starting | running | reconnecting | stopping | completed | error
   startedAt: null,
   finishedAt: null,
   stage: null,
@@ -28,10 +30,95 @@ const auditRuntime = {
   stages: createStageStates(),
   error: null,
   result: null,
-  logs: []
+  logs: [],
+  runId: null,
+  lastHeartbeatAt: null,
+  reconnectAttempts: 0,
+  maxReconnectAttempts: 10
 };
 
 let auditPort = null;
+let heartbeatInterval = null;
+const HEARTBEAT_INTERVAL_MS = 2000;  // 2 seconds
+const STALE_THRESHOLD_MS = 10000;    // 10 seconds (5 missed heartbeats)
+const MAX_GLOBAL_TIMEOUT_MS = 300000; // 5 minutes
+const STORAGE_KEY = 'auditRuntime';
+const MAX_RECONNECT_ATTEMPTS = 10;
+
+// HMAC signature verification
+let auditSecretKey = null;
+
+// Load secret key from encrypted storage on startup
+(async () => {
+  try {
+    const result = await encryptedStorage.get(['auditSecretKey']);
+    if (result.auditSecretKey) {
+      auditSecretKey = result.auditSecretKey;
+      console.log('[Worker] HMAC secret loaded from encrypted storage');
+    } else {
+      console.warn('[Worker] No HMAC secret found. Run: python scripts/generate_audit_secret.py');
+    }
+  } catch (err) {
+    console.error('[Worker] Failed to load HMAC secret:', err);
+  }
+})();
+
+/**
+ * Sign command with HMAC-SHA256 signature
+ * @param {Object} command - Command object to sign
+ * @returns {Promise<Object>} Command with signature field added
+ */
+async function signCommand(command) {
+  if (!auditSecretKey) {
+    // No secret configured, send unsigned (backward compatibility)
+    console.warn('[Worker] Sending unsigned command (no secret key)');
+    return command;
+  }
+
+  // Create canonical representation (sorted keys)
+  const canonical = JSON.stringify(command, Object.keys(command).sort());
+  const encoder = new TextEncoder();
+  const data = encoder.encode(canonical);
+  
+  // Convert hex secret to ArrayBuffer
+  const keyData = new Uint8Array(auditSecretKey.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  
+  // Import key for HMAC
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  // Generate signature
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
+  const hashArray = Array.from(new Uint8Array(signature));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  
+  // Add signature to command
+  return { ...command, signature: hashHex };
+}
+
+/**
+ * Send signed command to native host
+ * @param {Object} command - Command to send
+ */
+async function sendSignedCommand(command) {
+  if (!auditPort) {
+    console.error('[Worker] Cannot send command: no active port');
+    return;
+  }
+  
+  try {
+    const signedCommand = await signCommand(command);
+    auditPort.postMessage(signedCommand);
+  } catch (err) {
+    console.error('[Worker] Failed to sign command:', err);
+    throw err;
+  }
+}
 
 function resetAuditRuntime() {
   auditRuntime.running = false;
@@ -45,6 +132,54 @@ function resetAuditRuntime() {
   auditRuntime.error = null;
   auditRuntime.result = null;
   auditRuntime.logs = [];
+  auditRuntime.runId = null;
+  auditRuntime.lastHeartbeatAt = null;
+  auditRuntime.reconnectAttempts = 0;
+  stopHeartbeat();
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatInterval = setInterval(() => {
+    if (auditPort && auditRuntime.running) {
+      try {
+        sendSignedCommand({ command: 'status' });
+      } catch (err) {
+        console.warn('[Worker] Heartbeat failed:', err);
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+async function persistRuntime() {
+  try {
+    await chrome.storage.local.set({ [STORAGE_KEY]: auditRuntime });
+  } catch (err) {
+    console.warn('[Worker] Failed to persist runtime:', err);
+  }
+}
+
+async function restoreRuntime() {
+  try {
+    const stored = await chrome.storage.local.get(STORAGE_KEY);
+    if (stored?.[STORAGE_KEY]) {
+      Object.assign(auditRuntime, stored[STORAGE_KEY]);
+      console.log('[Worker] Restored runtime from storage');
+      // If was running, attempt reconnect
+      if (auditRuntime.running && auditRuntime.state === 'running') {
+        attemptReconnect();
+      }
+    }
+  } catch (err) {
+    console.warn('[Worker] Failed to restore runtime:', err);
+  }
 }
 
 function updateStage(stageName, patch) {
@@ -77,6 +212,9 @@ function pushAuditLog(message) {
 }
 
 function getAuditStatusPayload() {
+  const now = Date.now();
+  const stale = auditRuntime.lastHeartbeatAt && (now - auditRuntime.lastHeartbeatAt > STALE_THRESHOLD_MS);
+  
   return {
     running: auditRuntime.running,
     state: auditRuntime.state,
@@ -88,12 +226,31 @@ function getAuditStatusPayload() {
     stages: auditRuntime.stages,
     error: auditRuntime.error,
     result: auditRuntime.result,
-    logs: auditRuntime.logs
+    logs: auditRuntime.logs,
+    runId: auditRuntime.runId,
+    heartbeat: {
+      lastSeenAt: auditRuntime.lastHeartbeatAt,
+      stale: stale,
+      staleThresholdMs: STALE_THRESHOLD_MS
+    },
+    reconnect: {
+      attempts: auditRuntime.reconnectAttempts,
+      maxAttempts: auditRuntime.maxReconnectAttempts
+    }
   };
 }
 
 function handleAuditHostMessage(msg) {
   const type = msg?.type;
+  
+  // Update heartbeat timestamp on any message
+  auditRuntime.lastHeartbeatAt = Date.now();
+  
+  // Capture runId if present
+  if (msg?.runId && !auditRuntime.runId) {
+    auditRuntime.runId = msg.runId;
+  }
+  
   if (type === 'status') {
     auditRuntime.state = msg.status || auditRuntime.state;
     auditRuntime.stage = msg.stage || auditRuntime.stage;
@@ -157,6 +314,8 @@ function handleAuditHostMessage(msg) {
       }
     }
     pushAuditLog(auditRuntime.message);
+    stopHeartbeat();
+    persistRuntime();
     return;
   }
   if (type === 'error') {
@@ -171,7 +330,81 @@ function handleAuditHostMessage(msg) {
       updateStage(auditRuntime.stage, { status: 'error', message: msg.error || 'Stage failed' });
     }
     pushAuditLog(`ERROR: ${auditRuntime.error}`);
+    stopHeartbeat();
+    persistRuntime();
   }
+}
+
+function attemptReconnect() {
+  // Check global timeout (5 minutes since start)
+  if (auditRuntime.startedAt) {
+    const elapsed = Date.now() - new Date(auditRuntime.startedAt).getTime();
+    if (elapsed > MAX_GLOBAL_TIMEOUT_MS) {
+      auditRuntime.running = false;
+      auditRuntime.state = 'error';
+      auditRuntime.error = 'Reconnect timeout: 5 minutes elapsed';
+      auditRuntime.message = auditRuntime.error;
+      pushAuditLog(`ERROR: ${auditRuntime.error}`);
+      stopHeartbeat();
+      persistRuntime();
+      return;
+    }
+  }
+
+  if (auditRuntime.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    auditRuntime.running = false;
+    auditRuntime.state = 'error';
+    auditRuntime.error = `Failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts`;
+    auditRuntime.message = auditRuntime.error;
+    pushAuditLog(`ERROR: ${auditRuntime.error}`);
+    stopHeartbeat();
+    persistRuntime();
+    return;
+  }
+
+  auditRuntime.state = 'reconnecting';
+  auditRuntime.reconnectAttempts++;
+  auditRuntime.message = `Reconnecting (attempt ${auditRuntime.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`;
+  pushAuditLog(auditRuntime.message);
+  persistRuntime();
+
+  const delay = Math.min(1000 * Math.pow(2, auditRuntime.reconnectAttempts - 1), 30000);
+  
+  setTimeout(() => {
+    try {
+      auditPort = chrome.runtime.connectNative(AUDIT_NATIVE_HOST);
+      auditPort.onMessage.addListener(handleAuditHostMessage);
+      auditPort.onDisconnect.addListener(handleNativeDisconnect);
+      
+      // Probe status to verify connection
+      sendSignedCommand({ command: 'status' });
+      
+      auditRuntime.state = 'running';
+      auditRuntime.message = 'Reconnected successfully';
+      pushAuditLog(auditRuntime.message);
+      startHeartbeat();
+      persistRuntime();
+    } catch (err) {
+      const errMsg = String(err?.message || err);
+      console.warn(`[Worker] Reconnect attempt ${auditRuntime.reconnectAttempts} failed:`, errMsg);
+      attemptReconnect();
+    }
+  }, delay);
+}
+
+function handleNativeDisconnect() {
+  if (auditRuntime.running) {
+    const runtimeErr = chrome.runtime.lastError?.message;
+    auditRuntime.error = runtimeErr || auditRuntime.error || 'Native host disconnected unexpectedly';
+    auditRuntime.message = auditRuntime.error;
+    pushAuditLog(`WARNING: ${auditRuntime.error}`);
+    stopHeartbeat();
+    persistRuntime();
+    
+    // Attempt reconnect instead of failing immediately
+    attemptReconnect();
+  }
+  auditPort = null;
 }
 
 function startAuditNativeRun(mode, stage) {
@@ -183,6 +416,7 @@ function startAuditNativeRun(mode, stage) {
   auditRuntime.running = true;
   auditRuntime.state = 'starting';
   auditRuntime.startedAt = new Date().toISOString();
+  auditRuntime.reconnectAttempts = 0;
 
   try {
     auditPort = chrome.runtime.connectNative(AUDIT_NATIVE_HOST);
@@ -190,25 +424,18 @@ function startAuditNativeRun(mode, stage) {
     auditRuntime.running = false;
     auditRuntime.state = 'error';
     auditRuntime.error = String(err?.message || err);
+    persistRuntime();
     return { ok: false, error: auditRuntime.error };
   }
 
   auditPort.onMessage.addListener(handleAuditHostMessage);
-  auditPort.onDisconnect.addListener(() => {
-    if (auditRuntime.running) {
-      const runtimeErr = chrome.runtime.lastError?.message;
-      auditRuntime.running = false;
-      auditRuntime.state = 'error';
-      auditRuntime.finishedAt = new Date().toISOString();
-      auditRuntime.error = runtimeErr || auditRuntime.error || 'Native host disconnected unexpectedly';
-      auditRuntime.message = auditRuntime.error;
-      pushAuditLog(`ERROR: ${auditRuntime.error}`);
-    }
-    auditPort = null;
-  });
+  auditPort.onDisconnect.addListener(handleNativeDisconnect);
 
-  auditPort.postMessage({ command: 'run', mode, stage });
+  sendSignedCommand({ command: 'run', mode, stage });
   pushAuditLog(`Started audit run mode=${mode}${stage ? ` stage=${stage}` : ''}`);
+  
+  startHeartbeat();
+  persistRuntime();
 
   return { ok: true, started: true };
 }
@@ -218,15 +445,20 @@ function stopAuditNativeRun() {
     return { ok: false, error: 'No running audit to stop' };
   }
   try {
-    auditPort.postMessage({ command: 'stop' });
+    sendSignedCommand({ command: 'stop' });
     auditRuntime.state = 'stopping';
     auditRuntime.message = 'Stop requested';
     pushAuditLog('Stop requested');
+    stopHeartbeat();
+    persistRuntime();
     return { ok: true, stopping: true };
   } catch (err) {
     return { ok: false, error: String(err?.message || err) };
   }
 }
+
+// Restore runtime on worker startup
+restoreRuntime();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
@@ -265,6 +497,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'DAM_AUDIT_CLEAR_LOGS') {
         auditRuntime.logs = [];
         sendResponse({ ok: true });
+        return;
+      }
+
+      if (msg?.type === 'DAM_AUDIT_OPEN_OUTPUT') {
+        // Note: Browser cannot open file:// URLs to arbitrary local paths for security
+        // This will show the extension's bundled assets if they exist, or fail gracefully
+        // For production, consider hosting a web-based file viewer or using chrome.downloads API
+        try {
+          // Try to open extension-relative path (safer than file://)
+          const outputUrl = chrome.runtime.getURL('assets/audit/');
+          chrome.tabs.create({ url: outputUrl });
+          sendResponse({ ok: true });
+        } catch (err) {
+          // Fallback: show message that files must be accessed via File Explorer
+          sendResponse({ 
+            ok: false, 
+            error: 'Cannot open local folder from extension. Please navigate to: C:\\Users\\colle\\Downloads\\aprimo_dam_crawler_extension\\assets\\audit\\' 
+          });
+        }
         return;
       }
 

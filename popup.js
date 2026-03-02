@@ -107,9 +107,28 @@ function renderAuditStatus(status = {}) {
   const el = document.getElementById('auditStatus');
   if (!el) return;
   
-  // Support both "state" field and "running" boolean field
-  const isRunning = (status?.state === 'running') || (status?.running === true);
+  const state = status?.state || 'idle';
+  const isRunning = (state === 'running') || (status?.running === true);
   const progress = status?.progress;
+  const heartbeat = status?.heartbeat;
+  const reconnect = status?.reconnect;
+  
+  // Clear existing content
+  el.textContent = '';
+  
+  // Show reconnecting state
+  if (state === 'reconnecting') {
+    const attempts = reconnect?.attempts || 0;
+    const maxAttempts = reconnect?.maxAttempts || 10;
+    const span = document.createElement('span');
+    span.style.color = 'orange';
+    span.textContent = `Audit: reconnecting (attempt ${attempts}/${maxAttempts})`;
+    el.appendChild(span);
+    return;
+  }
+  
+  // Build status text safely
+  let statusText = '';
   
   if (isRunning && progress) {
     const current = Number(progress.current);
@@ -118,29 +137,39 @@ function renderAuditStatus(status = {}) {
     const imagesDiscovered = Number(progress.images_discovered);
     const imagesPending = Number(progress.images_pending);
     
-    let statusHtml = `Audit: running`;
+    statusText = 'Audit: running';
     if (status.stage) {
-      statusHtml += ` (${status.stage})`;
+      statusText += ` (${status.stage})`;
     }
     
     if (Number.isFinite(current) && Number.isFinite(total)) {
-      statusHtml += `<br>URLs: ${current}/${total} (${percent.toFixed(1)}%)`;
+      statusText += `\nURLs: ${current.toLocaleString()}/${total.toLocaleString()} (${percent.toFixed(1)}%)`;
     }
     
     if (Number.isFinite(imagesDiscovered)) {
-      statusHtml += `<br>Images: ${imagesDiscovered} discovered`;
+      statusText += `\nImages: ${imagesDiscovered.toLocaleString()} discovered`;
       if (Number.isFinite(imagesPending)) {
-        statusHtml += ` (${imagesPending} pending)`;
+        statusText += ` (${imagesPending.toLocaleString()} pending)`;
       }
     }
     
-    el.innerHTML = statusHtml;
+    // Add stale warning if needed
+    if (heartbeat?.stale) {
+      statusText += '\n⚠ No response (may be hung)';
+    }
   } else {
-    const state = isRunning ? 'running' : (status?.state || 'idle');
     const stage = status?.stage ? ` (${status.stage})` : '';
     const msg = status?.message ? ` - ${status.message}` : '';
-    el.textContent = `Audit: ${state}${stage}${msg}`;
+    statusText = `Audit: ${state}${stage}${msg}`;
+    
+    if (heartbeat?.stale && isRunning) {
+      statusText += '\n⚠ No response (may be hung)';
+    }
   }
+  
+  // Set text content safely (no HTML injection possible)
+  el.style.whiteSpace = 'pre-line';
+  el.textContent = statusText;
 }
 
 function stageLabel(stageName) {
@@ -187,6 +216,16 @@ function renderAuditProgress(status = {}) {
   if (!wrap || !urlText || !imageText || !fill) return;
 
   const progress = status?.progress;
+  const stage = status?.stage || '';
+  const isStage01 = stage.includes('01_crawl');
+  
+  // Only show queue metrics for stage 01
+  if (!isStage01) {
+    wrap.classList.add('hidden');
+    fill.style.width = '0%';
+    return;
+  }
+  
   const current = Number(progress?.current);
   const total = Number(progress?.total);
   const explicitPercent = Number(progress?.percent);
@@ -210,9 +249,9 @@ function renderAuditProgress(status = {}) {
 
   wrap.classList.remove('hidden');
   fill.style.width = `${boundedPercent}%`;
-  urlText.textContent = `URLs: ${current}/${total} (${boundedPercent.toFixed(2)}%)${resumedTag}${message}`;
+  urlText.textContent = `URLs: ${current.toLocaleString()}/${total.toLocaleString()} (${boundedPercent.toFixed(2)}%)${resumedTag}${message}`;
   imageText.textContent = hasImageMetrics
-    ? `Images: ${imagesDiscovered} (${Number.isFinite(imagesPending) ? Math.max(0, imagesPending) : 0} pending)`
+    ? `Images: ${imagesDiscovered.toLocaleString()} (${Number.isFinite(imagesPending) ? Math.max(0, imagesPending).toLocaleString() : 0} pending)`
     : 'Images: collecting...';
 }
 
@@ -259,6 +298,13 @@ async function clickAuditStop() {
   }
   setStatus('Audit stop requested.');
   await refreshAuditStatus();
+}
+
+async function clickOpenOutputFolder() {
+  const res = await sendToWorker({ type: 'DAM_AUDIT_OPEN_OUTPUT' });
+  if (!res?.ok) {
+    setStatus(res?.error || 'Failed to open output folder');
+  }
 }
 
 async function clickStart() {
@@ -361,6 +407,11 @@ document.getElementById('importFileInput').addEventListener('change', (e) => han
 document.getElementById('resetBtn').addEventListener('click', () => clickReset().catch(e => setStatus(String(e))));
 document.getElementById('auditRunBtn').addEventListener('click', () => clickAuditRun().catch(e => setStatus(String(e))));
 document.getElementById('auditStopBtn').addEventListener('click', () => clickAuditStop().catch(e => setStatus(String(e))));
+
+const openOutputBtn = document.getElementById('auditOpenOutputBtn');
+if (openOutputBtn) {
+  openOutputBtn.addEventListener('click', () => clickOpenOutputFolder().catch(e => setStatus(String(e))));
+}
 
 refresh();
 setInterval(refresh, 2000);

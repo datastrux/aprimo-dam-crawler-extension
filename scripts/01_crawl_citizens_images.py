@@ -49,6 +49,11 @@ def emit_progress(
         "resumed": resumed,
         "images_discovered": images_discovered,
         "images_pending": images_pending,
+        # Clearer aliases for popup rendering
+        "urls_completed": current,
+        "urls_total": total,
+        "images_detected": images_discovered,
+        "images_remaining": images_pending,
     }
     print(f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=False)}", flush=True)
 

@@ -14,6 +14,15 @@ REPORTS_DIR = ROOT / "reports"
 
 CITIZENS_URLS_PATH = ASSETS_DIR / "citizensbank_urls.txt"
 
+# Domain whitelist for security
+# Only URLs from these domains will be processed
+ALLOWED_DOMAINS = {
+    "www.citizensbank.com",
+    "citizensbank.com",
+    "online.citizensbank.com",
+    "mobile.citizensbank.com"
+}
+
 
 def ensure_dirs() -> None:
     AUDIT_DIR.mkdir(parents=True, exist_ok=True)
@@ -37,6 +46,25 @@ def normalize_url(url: str) -> str:
     return urlunparse(cleaned)
 
 
+def validate_url_domain(url: str) -> bool:
+    """Validate that URL is from an allowed domain.
+    
+    Returns False for URLs from non-whitelisted domains to prevent processing
+    of potentially malicious or unexpected URLs.
+    """
+    if not url:
+        return False
+    
+    parsed = urlparse(url.strip())
+    domain = parsed.netloc.lower()
+    
+    # Remove port if present
+    if ':' in domain:
+        domain = domain.split(':')[0]
+    
+    return domain in ALLOWED_DOMAINS
+
+
 def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
@@ -48,8 +76,11 @@ def write_json(path: Path, data: Any) -> None:
 
 
 def read_url_list(path: Path) -> list[str]:
+    import sys
     urls: list[str] = []
     seen = set()
+    rejected_count = 0
+    
     with path.open("r", encoding="utf-8") as f:
         for line in f:
             url = line.strip()
@@ -58,8 +89,20 @@ def read_url_list(path: Path) -> list[str]:
             normalized = normalize_url(url)
             if normalized in seen:
                 continue
+            
+            # Validate domain against whitelist
+            if not validate_url_domain(normalized):
+                rejected_count += 1
+                if rejected_count <= 5:  # Only log first 5 to avoid spam
+                    sys.stderr.write(f"[Security] Rejected non-whitelisted URL: {normalized}\n")
+                continue
+            
             seen.add(normalized)
             urls.append(normalized)
+    
+    if rejected_count > 0:
+        sys.stderr.write(f"[Security] Rejected {rejected_count} URLs from non-whitelisted domains\n")
+    
     return urls
 
 
