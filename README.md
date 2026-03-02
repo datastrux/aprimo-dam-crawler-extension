@@ -343,7 +343,9 @@ This extension implements multiple security layers to protect against common att
 - All dynamic content rendered with `textContent` instead of `innerHTML`
 - HTML special characters cannot be injected via progress messages or stage names
 - Content Security Policy (CSP) restricts scripts to extension-bundled code only
-- CSP blocks inline scripts and external script sources
+- CSP blocks inline scripts and external script sources in extension pages
+- **Note:** CSP does NOT block Python HTTP requests (native host uses `requests` library, not browser)
+- Cross-domain image crawling works because Python bypasses browser CORS/CSP restrictions
 
 ### Path Traversal Protection
 - Removed `file://` URL scheme from output folder opening
@@ -382,11 +384,13 @@ This extension implements multiple security layers to protect against common att
 - Prevents malicious processes from impersonating extension or native host
 
 ### Domain Whitelist Validation
-- **URL domain validation** against hardcoded whitelist
-- Only citizensbank.com and subdomains allowed for processing
-- Non-whitelisted URLs rejected with security warnings
+- **URL domain validation** against hardcoded whitelist with wildcard support
+- Allowed domains: `citizensbank.com`, `aprimo.com`, and all subdomains via `*.domain.com` patterns
+- Includes Aprimo DAM/CDN domains for embedded images (dam.aprimo.com, r1.previews.aprimo.com, etc.)
+- Non-whitelisted URLs rejected with security warnings logged to stderr
 - Prevents accidental processing of malicious or unexpected URLs
 - Applied to all URL inputs in audit pipeline
+- Test whitelist: `python scripts/test_domain_whitelist.py` (19 test cases)
 
 ### Setup Security
 To enable command authentication:

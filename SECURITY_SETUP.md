@@ -172,14 +172,22 @@ python scripts\generate_audit_secret.py
 ```python
 # Edit scripts/audit_common.py
 ALLOWED_DOMAINS = {
-    "www.citizensbank.com",
+    # Citizens Bank domains
     "citizensbank.com",
-    "online.citizensbank.com",
-    "mobile.citizensbank.com",
-    # Add your subdomain here:
-    "newsubdomain.citizensbank.com"
+    "*.citizensbank.com",  # Wildcard for all subdomains
+    
+    # Aprimo DAM domains (already included)
+    "aprimo.com",
+    "*.aprimo.com",  # Wildcard for dam., cdn., etc.
+    
+    # Add custom domains if needed:
+    "newcustom.example.com"
 }
 ```
+
+**Note:** Wildcard patterns (`*.domain.com`) match any subdomain:
+- `*.aprimo.com` matches `dam.aprimo.com`, `cdn.aprimo.com`, `r1.previews.aprimo.com`
+- Also matches the base domain (`aprimo.com`)
 
 ## Security Best Practices
 
@@ -220,7 +228,8 @@ After setup, verify all security features:
 
 - [ ] HMAC signatures: Check Service Worker console for "HMAC secret loaded"
 - [ ] Encrypted storage: Inspect `chrome://extensions` → Storage → chrome.storage.local (should see `_enc_auditSecretKey` with encrypted blob)
-- [ ] Domain whitelist: Add `http://evil.com/test` to `citizensbank_urls.txt` → run audit → should be rejected
+- [ ] Domain whitelist: Run `python scripts\test_domain_whitelist.py` (should show 19 passed tests)
+- [ ] Domain rejection: Add `http://evil.com/test` to `citizensbank_urls.txt` → run audit → should be rejected
 - [ ] CSP: Open popup → check console for CSP violations (should be none)
 - [ ] XSS prevention: Inspect popup source → confirm no `innerHTML` usage
 - [ ] Path sanitization: Trigger error → check UI message has `<path>` instead of absolute paths

@@ -16,11 +16,21 @@ CITIZENS_URLS_PATH = ASSETS_DIR / "citizensbank_urls.txt"
 
 # Domain whitelist for security
 # Only URLs from these domains will be processed
+# Supports exact matches and wildcard patterns (*.domain.com)
 ALLOWED_DOMAINS = {
-    "www.citizensbank.com",
+    # Citizens Bank domains
     "citizensbank.com",
+    "www.citizensbank.com",
     "online.citizensbank.com",
-    "mobile.citizensbank.com"
+    "mobile.citizensbank.com",
+    "*.citizensbank.com",  # Any Citizens Bank subdomain
+    
+    # Aprimo DAM domains (for embedded images)
+    "aprimo.com",
+    "*.aprimo.com",  # Any Aprimo subdomain (dam., cdn., etc.)
+    "r1.previews.aprimo.com",
+    "previews.aprimo.com",
+    "*.previews.aprimo.com"
 }
 
 
@@ -49,8 +59,13 @@ def normalize_url(url: str) -> str:
 def validate_url_domain(url: str) -> bool:
     """Validate that URL is from an allowed domain.
     
+    Supports exact domain matching and wildcard patterns (*.domain.com).
     Returns False for URLs from non-whitelisted domains to prevent processing
     of potentially malicious or unexpected URLs.
+    
+    Examples:
+        - "citizensbank.com" matches exactly
+        - "*.aprimo.com" matches "dam.aprimo.com", "cdn.aprimo.com", etc.
     """
     if not url:
         return False
@@ -62,7 +77,22 @@ def validate_url_domain(url: str) -> bool:
     if ':' in domain:
         domain = domain.split(':')[0]
     
-    return domain in ALLOWED_DOMAINS
+    # Check exact match first (faster)
+    if domain in ALLOWED_DOMAINS:
+        return True
+    
+    # Check wildcard patterns (*.domain.com)
+    for allowed in ALLOWED_DOMAINS:
+        if allowed.startswith('*.'):
+            # Wildcard pattern: *.aprimo.com matches dam.aprimo.com
+            suffix = allowed[1:]  # Remove '*' to get '.aprimo.com'
+            if domain.endswith(suffix):
+                return True
+            # Also match the base domain (aprimo.com matches *.aprimo.com)
+            if domain == suffix[1:]:  # Remove leading '.'
+                return True
+    
+    return False
 
 
 def load_json(path: Path) -> Any:
