@@ -14,6 +14,7 @@ from audit_common import (
     CITIZENS_IMAGES_SCHEMA,
     CITIZENS_URLS_PATH,
     allowed_image_extension,
+    compress_citizens_images,
     ensure_dirs,
     normalize_url,
     read_url_list,
@@ -321,13 +322,26 @@ def main() -> None:
     for row in image_rows:
         image_to_pages[row["image_url"]].add(row["page_url"])
 
-    write_json(
-        AUDIT_DIR / "citizens_images_index.json",
-        [
-            {"image_url": image_url, "page_count": len(pages), "page_urls": sorted(pages)}
-            for image_url, pages in sorted(image_to_pages.items())
-        ],
-    )
+    # Build uncompressed index
+    images_index = [
+        {"image_url": image_url, "page_count": len(pages), "page_urls": sorted(pages)}
+        for image_url, pages in sorted(image_to_pages.items())
+    ]
+    
+    # Compress and save
+    compressed_index = compress_citizens_images(images_index)
+    write_json(AUDIT_DIR / "citizens_images_index.json", compressed_index)
+    
+    # Calculate storage savings
+    import sys
+    uncompressed_size = sys.getsizeof(str(images_index))
+    compressed_size = sys.getsizeof(str(compressed_index))
+    savings_pct = ((uncompressed_size - compressed_size) / uncompressed_size * 100) if uncompressed_size > 0 else 0
+    
+    print(f"✓ Compressed images index: {len(images_index)} images")
+    print(f"  Estimated savings: {savings_pct:.1f}% (in-memory size)")
+    print(f"  Unique domains: {len(compressed_index['metadata']['domains'])}")
+    print(f"  Path prefixes: {sum(len(v) for v in compressed_index['metadata']['path_prefixes'].values())}")
 
     if CHECKPOINT_PATH.exists():
         CHECKPOINT_PATH.unlink(missing_ok=True)

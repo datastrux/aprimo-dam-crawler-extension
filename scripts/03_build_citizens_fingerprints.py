@@ -13,6 +13,7 @@ from PIL import Image
 from audit_common import (
     AUDIT_DIR,
     CITIZENS_FINGERPRINTS_SCHEMA,
+    decompress_citizens_images,
     ensure_dirs,
     load_json,
     normalize_url,
@@ -24,6 +25,23 @@ from audit_common import (
 # Number of parallel workers for fingerprinting
 # Adjust based on CPU cores and network bandwidth
 MAX_WORKERS = 8
+PROGRESS_PREFIX = "AUDIT_PROGRESS "
+
+
+def emit_progress(current: int, total: int, message: str) -> None:
+    """Emit structured progress for extension UI"""
+    percent = round((current / total) * 100, 2) if total > 0 else 0
+    payload = {
+        "stage": "03_build_citizens_fingerprints.py",
+        "current": current,
+        "total": total,
+        "percent": percent,
+        "message": message,
+        # Aliases for popup rendering
+        "images_processed": current,
+        "images_total": total,
+    }
+    print(f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=False)}", flush=True)
 
 
 def image_phash(data: bytes) -> str | None:
@@ -81,45 +99,81 @@ def process_single_image(entry: dict, timeout: int) -> dict:
     return row
 
 
+def process_images_in_chunks(image_index, timeout, workers, chunk_size=1000):
+    """
+    Process images in chunks to reduce memory usage.
+    
+    Instead of loading all fingerprints in memory, process in batches
+    and yield results incrementally.
+    """
+    total_images = len(image_index)
+    
+    for chunk_start in range(0, total_images, chunk_size):
+        chunk_end = min(chunk_start + chunk_size, total_images)
+        chunk = image_index[chunk_start:chunk_end]
+        
+        print(f"Processing chunk {chunk_start:,}-{chunk_end:,} of {total_images:,}...")
+        
+        # Process this chunk in parallel
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(process_single_image, entry, timeout): entry
+                for entry in chunk
+            }
+            
+            for future in as_completed(futures):
+                try:
+                    yield future.result()
+                except Exception as exc:
+                    print(f"Image processing error: {exc}")
+                    # Still yield a failed entry
+                    entry = futures[future]
+                    yield {
+                        "image_url": entry.get("image_url", ""),
+                        "fingerprint_status": "error",
+                        "fingerprint_error": str(exc)
+                    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build fingerprints for Citizens-served images")
     parser.add_argument("--images-json", type=Path, default=AUDIT_DIR / "citizens_images_index.json")
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--workers", type=int, default=MAX_WORKERS, help="Number of parallel workers")
+    parser.add_argument("--chunk-size", type=int, default=1000, help="Process images in chunks (reduces memory)")
     args = parser.parse_args()
 
     ensure_dirs()
-    image_index = load_json(args.images_json)
+    
+    # Load and decompress index
+    print("Loading citizens images index...")
+    compressed_data = load_json(args.images_json)
+    image_index = decompress_citizens_images(compressed_data)
     total_images = len(image_index)
-
-    print(f"Processing {total_images:,} images with {args.workers} parallel workers...")
+    
+    print(f"✓ Loaded {total_images:,} images (decompressed)")
+    print(f"Processing with {args.workers} parallel workers in chunks of {args.chunk_size}...")
+    
+    emit_progress(0, total_images, "Starting Citizens image fingerprinting")
 
     rows: list[dict] = []
     completed = 0
     
-    # Process images in parallel using ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        # Submit all tasks
-        future_to_entry = {
-            executor.submit(process_single_image, entry, args.timeout): entry
-            for entry in image_index
-        }
+    # Process images in chunks to reduce memory usage
+    for row in process_images_in_chunks(image_index, args.timeout, args.workers, args.chunk_size):
+        rows.append(row)
+        completed += 1
         
-        # Collect results as they complete
-        for future in as_completed(future_to_entry):
-            try:
-                row = future.result()
-                rows.append(row)
-                completed += 1
-                
-                # Progress reporting every 250 images
-                if completed % 250 == 0:
-                    percent = (completed / total_images) * 100
-                    print(f"Progress: {completed:,}/{total_images:,} ({percent:.1f}%)")
-            except Exception as exc:
-                # Handle any unexpected errors during processing
-                print(f"Image processing generated an exception: {exc}")
-                completed += 1
+        # Progress reporting every 50 images (more frequent for UI responsiveness)
+        if completed % 50 == 0:
+            emit_progress(completed, total_images, f"Fingerprinted {completed:,}/{total_images:,} Citizens images")
+    
+    # Final progress
+    emit_progress(total_images, total_images, "Citizens image fingerprinting complete")
+    
+    # Clear image_index from memory (no longer needed)
+    del image_index
+    del compressed_data
 
     output = AUDIT_DIR / "citizens_fingerprints.json"
     write_json(output, rows)

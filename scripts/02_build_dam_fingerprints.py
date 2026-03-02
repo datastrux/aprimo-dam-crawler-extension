@@ -21,6 +21,24 @@ from audit_common import (
     write_json,
 )
 
+PROGRESS_PREFIX = "AUDIT_PROGRESS "
+
+
+def emit_progress(current: int, total: int, message: str) -> None:
+    """Emit structured progress for extension UI"""
+    percent = round((current / total) * 100, 2) if total > 0 else 0
+    payload = {
+        "stage": "02_build_dam_fingerprints.py",
+        "current": current,
+        "total": total,
+        "percent": percent,
+        "message": message,
+        # Aliases for popup rendering
+        "assets_processed": current,
+        "assets_total": total,
+    }
+    print(f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=False)}", flush=True)
+
 
 def image_phash(data: bytes) -> str | None:
     try:
@@ -33,6 +51,10 @@ def image_phash(data: bytes) -> str | None:
 def build_fingerprints(dam_json: Path, timeout: int) -> list[dict]:
     payload = load_json(dam_json)
     assets = payload.get("assets", []) if isinstance(payload, dict) else payload
+    total_assets = len(assets)
+    
+    print(f"Building fingerprints for {total_assets:,} DAM assets...")
+    emit_progress(0, total_assets, "Starting DAM fingerprinting")
 
     rows: list[dict] = []
     for idx, asset in enumerate(assets, start=1):
@@ -72,9 +94,13 @@ def build_fingerprints(dam_json: Path, timeout: int) -> list[dict]:
                 row["fingerprint_error"] = str(err)
 
         rows.append(row)
-        if idx % 250 == 0:
-            print(f"Processed DAM assets: {idx}/{len(assets)}")
+        
+        # Emit progress every 50 assets (more frequent than 250)
+        if idx % 50 == 0:
+            emit_progress(idx, total_assets, f"Fingerprinted {idx:,}/{total_assets:,} DAM assets")
 
+    # Final progress
+    emit_progress(total_assets, total_assets, "DAM fingerprinting complete")
     return rows
 
 

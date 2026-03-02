@@ -10,6 +10,24 @@ import imagehash
 
 from audit_common import AUDIT_DIR, ensure_dirs, load_json, write_json
 
+PROGRESS_PREFIX = "AUDIT_PROGRESS "
+
+
+def emit_progress(current: int, total: int, message: str) -> None:
+    """Emit structured progress for extension UI"""
+    percent = round((current / total) * 100, 2) if total > 0 else 0
+    payload = {
+        "stage": "04_match_assets.py",
+        "current": current,
+        "total": total,
+        "percent": percent,
+        "message": message,
+        # Aliases for popup rendering
+        "images_matched": current,
+        "images_total": total,
+    }
+    print(f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=False)}", flush=True)
+
 
 def extract_asset_id_from_url(url: str) -> str | None:
     """Extract Aprimo asset/item ID from CDN URL.
@@ -75,8 +93,12 @@ def main() -> None:
 
     matches: list[dict] = []
     unmatched: list[dict] = []
+    
+    total_citizens = len(citizens_rows)
+    print(f"Matching {total_citizens:,} Citizens images against {len(dam_rows):,} DAM assets...")
+    emit_progress(0, total_citizens, "Starting asset matching")
 
-    for row in citizens_rows:
+    for idx, row in enumerate(citizens_rows, start=1):
         if row.get("fingerprint_status") != "ok":
             unmatched.append({
                 **row,
@@ -84,6 +106,8 @@ def main() -> None:
                 "match_reason": row.get("fingerprint_error") or "citizens_fingerprint_error",
                 "url_contains_asset_id": False,
             })
+            if idx % 100 == 0:
+                emit_progress(idx, total_citizens, f"Matching images {idx:,}/{total_citizens:,}")
             continue
 
         image_url = row.get("image_url", "")
@@ -107,6 +131,8 @@ def main() -> None:
                 "match_method": "url_asset_id",
             })
             url_match_found = True
+            if idx % 100 == 0:
+                emit_progress(idx, total_citizens, f"Matching images {idx:,}/{total_citizens:,}")
             continue
 
         # Step 2: Try exact SHA256 match (perfect pixel match)
@@ -123,6 +149,8 @@ def main() -> None:
                     "url_contains_asset_id": bool(asset_id_from_url),
                     "match_method": "sha256_exact",
                 })
+            if idx % 100 == 0:
+                emit_progress(idx, total_citizens, f"Matching images {idx:,}/{total_citizens:,}")
             continue
 
         # Step 3: Try perceptual hash (phash) matching for similar images
@@ -155,6 +183,13 @@ def main() -> None:
                 "best_phash_distance": best_dist,
                 "url_contains_asset_id": bool(asset_id_from_url),
             })
+        
+        # Emit progress every 100 images
+        if idx % 100 == 0:
+            emit_progress(idx, total_citizens, f"Matching images {idx:,}/{total_citizens:,}")
+    
+    # Final progress
+    emit_progress(total_citizens, total_citizens, "Asset matching complete")
 
     dam_dupes_by_sha = [
         {

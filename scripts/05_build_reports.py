@@ -9,6 +9,21 @@ from openpyxl.styles import Font
 
 from audit_common import AUDIT_DIR, REPORTS_DIR, ensure_dirs, load_json, write_csv, write_json
 
+PROGRESS_PREFIX = "AUDIT_PROGRESS "
+
+
+def emit_progress(current: int, total: int, message: str) -> None:
+    """Emit structured progress for extension UI"""
+    percent = round((current / total) * 100, 2) if total > 0 else 0
+    payload = {
+        "stage": "05_build_reports.py",
+        "current": current,
+        "total": total,
+        "percent": percent,
+        "message": message,
+    }
+    print(f"{PROGRESS_PREFIX}{json.dumps(payload, ensure_ascii=False)}", flush=True)
+
 
 def write_xlsx(summary: dict, master_rows: list[dict], unmatched_rows: list[dict], 
                dam_dupes: list[dict], citizens_dupes: list[dict], 
@@ -252,6 +267,11 @@ def main() -> None:
     args = parser.parse_args()
 
     ensure_dirs()
+    
+    # Total steps for progress tracking
+    total_steps = 6
+    
+    emit_progress(0, total_steps, "Loading match results...")
     matches = load_json(args.matches)
     unmatched = load_json(args.unmatched)
     dam_dupes = load_json(args.dam_dupes)
@@ -267,6 +287,7 @@ def main() -> None:
     except FileNotFoundError:
         governance = {}
 
+    emit_progress(1, total_steps, "Preparing report data...")
     master_rows: list[dict] = []
     for row in matches:
         out = dict(row)
@@ -290,6 +311,7 @@ def main() -> None:
         "citizens_duplicate_groups": len(citizens_dupes),
     }
 
+    emit_progress(2, total_steps, "Generating CSV reports...")
     master_csv = AUDIT_DIR / "audit_master.csv"
     write_csv(
         master_csv,
@@ -299,12 +321,17 @@ def main() -> None:
     write_json(AUDIT_DIR / "audit_master.json", master_rows)
     write_json(AUDIT_DIR / "audit_summary.json", summary)
 
+    emit_progress(3, total_steps, "Generating Excel report...")
     xlsx_out = REPORTS_DIR / "citizens_dam_audit.xlsx"
-    html_out = REPORTS_DIR / "audit_report.html"
-
     unmatched_rows = [r for r in master_rows if r.get("needs_dam_upload")]
     write_xlsx(summary, master_rows, unmatched_rows, dam_dupes, citizens_dupes, governance, xlsx_out)
+    
+    emit_progress(4, total_steps, "Generating HTML dashboard...")
+    html_out = REPORTS_DIR / "audit_report.html"
     write_html(master_rows, governance, html_out)
+    
+    emit_progress(5, total_steps, "Finalizing reports...")
+    emit_progress(6, total_steps, "Report generation complete")
 
     print(json.dumps({
         "summary": summary,
