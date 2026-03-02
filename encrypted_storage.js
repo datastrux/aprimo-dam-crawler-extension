@@ -224,7 +224,7 @@ class EncryptedStorage {
 }
 
 // Export singleton instance
-const encryptedStorage = new EncryptedStorage();
+export const encryptedStorage = new EncryptedStorage();
 
 // Auto-initialize on import
 encryptedStorage.init().catch(err => {
