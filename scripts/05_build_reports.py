@@ -91,8 +91,17 @@ def write_xlsx(summary: dict, master_rows: list[dict], unmatched_rows: list[dict
     wb.save(output)
 
 
-def write_html(master_rows: list[dict], output: Path) -> None:
+def write_html(master_rows: list[dict], governance: dict, output: Path) -> None:
     payload = json.dumps(master_rows, ensure_ascii=False)
+    
+    # Format governance metrics
+    total_matched = governance.get("total_matched_images", 0)
+    direct_dam = governance.get("using_direct_dam_urls", 0)
+    local_copies = governance.get("using_local_copies", 0)
+    adoption_rate = governance.get("dam_url_adoption_rate", 0)
+    dupe_groups = governance.get("citizens_duplicate_groups", 0)
+    dupe_urls = governance.get("total_duplicate_urls", 0)
+    
     html = f"""<!doctype html>
 <html>
 <head>
@@ -114,10 +123,36 @@ def write_html(master_rows: list[dict], output: Path) -> None:
     .badge {{ padding: 2px 4px; background: #e0e0e0; border-radius: 3px; font-size: 10px; }}
     .badge-dam {{ background: #c3f0ca; color: #0d5e1e; }}
     .badge-local {{ background: #fff6dd; }}
+    .dashboard {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 16px 0; }}
+    .metric-card {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; }}
+    .metric-card h3 {{ margin: 0 0 8px 0; font-size: 14px; color: #6c757d; text-transform: uppercase; }}
+    .metric-card .value {{ font-size: 32px; font-weight: bold; color: #212529; margin: 8px 0; }}
+    .metric-card .label {{ font-size: 12px; color: #6c757d; }}
+    .metric-card.success {{ border-left: 4px solid #28a745; }}
+    .metric-card.warning {{ border-left: 4px solid #ffc107; }}
+    .metric-card.info {{ border-left: 4px solid #17a2b8; }}
   </style>
 </head>
 <body>
   <h2>Citizens vs DAM Audit</h2>
+  
+  <div class="dashboard">
+    <div class="metric-card success">
+      <h3>DAM Adoption</h3>
+      <div class="value">{adoption_rate}%</div>
+      <div class="label">{direct_dam} of {total_matched} using direct DAM URLs</div>
+    </div>
+    <div class="metric-card warning">
+      <h3>Local Copies</h3>
+      <div class="value">{local_copies}</div>
+      <div class="label">Images downloaded instead of direct DAM links</div>
+    </div>
+    <div class="metric-card info">
+      <h3>Duplicate Groups</h3>
+      <div class="value">{dupe_groups}</div>
+      <div class="label">{dupe_urls} duplicate URLs found</div>
+    </div>
+  </div>
   <div class=\"controls\">
     <input id=\"q\" placeholder=\"Search image URL or DAM item\" style=\"min-width:320px\" />
     <select id=\"status\">
@@ -269,7 +304,7 @@ def main() -> None:
 
     unmatched_rows = [r for r in master_rows if r.get("needs_dam_upload")]
     write_xlsx(summary, master_rows, unmatched_rows, dam_dupes, citizens_dupes, governance, xlsx_out)
-    write_html(master_rows, html_out)
+    write_html(master_rows, governance, html_out)
 
     print(json.dumps({
         "summary": summary,
