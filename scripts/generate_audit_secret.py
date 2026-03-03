@@ -3,6 +3,7 @@
 
 import secrets
 import sys
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,35 +21,34 @@ def main() -> None:
     
     # Write to file
     SECRET_FILE.write_bytes(secret)
-    SECRET_FILE.chmod(0o600)  # Read/write for owner only
+    
+    # Set file permissions (Unix-like systems only)
+    if os.name != 'nt':  # Not Windows
+        try:
+            SECRET_FILE.chmod(0o600)  # Read/write for owner only
+        except Exception:
+            pass  # Ignore permission errors
     
     # Output hex-encoded secret for extension storage
     hex_secret = secret.hex()
     
     print(f"✅ Secret generated and saved to: {SECRET_FILE}")
-    print(f"📋 Add this to extension's encrypted storage:")
-    print(f"{{")
-    print(f'  "auditSecretKey": "{hex_secret}"')
-    print(f"}}")
     print()
     print(f"🔐 Secret (hex): {hex_secret}")
     print()
-    print("📝 Next steps:")
-    print("1. Copy the hex secret above")
-    print("2. Open chrome://extensions")
-    print("3. Click 'Service Worker' for this extension")
-    print("4. Run in console:")
-    print(f'   // Import encrypted storage')
-    print(f'   const {{ encryptedStorage }} = await import(chrome.runtime.getURL("encrypted_storage.js"));')
-    print(f'   // Store secret in encrypted storage')
-    print(f'   await encryptedStorage.set({{ auditSecretKey: "{hex_secret}" }});')
-    print(f'   console.log("✅ Secret stored in encrypted storage");')
-    print("5. Reload the extension")
+    print("📝 Next step: Store in Chrome extension")
     print()
-    print("🔒 Security notes:")
-    print("   - Secret is stored in encrypted form using AES-GCM")
-    print("   - Secret file (.audit_secret) has owner-only permissions (600)")
+    print("In Chrome DevTools (Service Worker console at chrome://extensions), run:")
+    print()
+    print("chrome.storage.local.set({")
+    print(f"  'auditSecretKey': '{hex_secret}'")
+    print("}, () => console.log('✅ Secret stored'));")
+    print()
+    print("Then reload the extension and run the audit pipeline.")
+    print()
+    print("🔒 Security note:")
     print("   - Keep this secret safe and never commit to version control")
+    print("   - Both .audit_secret and .gitignore protect this file")
 
 
 if __name__ == "__main__":
