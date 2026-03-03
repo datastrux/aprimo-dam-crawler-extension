@@ -137,18 +137,25 @@ def check_dam_json():
             with open(dam_json, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            if not isinstance(data, list):
-                issues.append("dam_assets.json must be a JSON array")
-                print(f"  ✗ Invalid format (expected array, got {type(data).__name__})")
+            if isinstance(data, list):
+                assets = data
+            elif isinstance(data, dict) and isinstance(data.get('assets'), list):
+                assets = data.get('assets', [])
+                warning_msg = "dam_assets.json uses wrapped format {'assets': [...]} (supported)"
+                warnings.append(warning_msg)
+                print("  ⚠ Wrapped JSON format detected ({'assets': [...]})")
+            else:
+                issues.append("dam_assets.json must be a JSON array or object with an 'assets' array")
+                print(f"  ✗ Invalid format (expected array or dict.assets array, got {type(data).__name__})")
                 return False
             
-            asset_count = len(data)
+            asset_count = len(assets)
             print(f"  ✓ Valid JSON format")
             print(f"  ✓ Contains {asset_count:,} assets")
             
             # Validate first asset has expected fields
             if asset_count > 0:
-                first_asset = data[0]
+                first_asset = assets[0]
                 has_id = any(k in first_asset for k in ['id', 'item_id', 'asset_id'])
                 if has_id:
                     print(f"  ✓ Asset schema valid")
@@ -513,7 +520,13 @@ def print_summary():
         size_mb = dam_json.stat().st_size / (1024 * 1024)
         try:
             with open(dam_json, 'r', encoding='utf-8') as f:
-                asset_count = len(json.load(f))
+                payload = json.load(f)
+                if isinstance(payload, list):
+                    asset_count = len(payload)
+                elif isinstance(payload, dict) and isinstance(payload.get('assets'), list):
+                    asset_count = len(payload.get('assets', []))
+                else:
+                    asset_count = 0
             print(f"DAM Dataset: {asset_count:,} assets ({size_mb:.1f} MB)")
         except:
             print(f"DAM Dataset: {size_mb:.1f} MB")

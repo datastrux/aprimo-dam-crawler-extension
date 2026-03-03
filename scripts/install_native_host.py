@@ -199,7 +199,7 @@ def verify_installation(extension_id: str):
         reg_path = r"Software\Google\Chrome\NativeMessagingHosts\com.aprimo.dam_audit"
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path)
-            value, _ = winreg.QueryValue(key, "")
+            value = winreg.QueryValue(key, "")
             winreg.CloseKey(key)
             
             if Path(value) == manifest_path:

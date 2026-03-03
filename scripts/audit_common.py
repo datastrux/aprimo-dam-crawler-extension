@@ -12,7 +12,7 @@ ASSETS_DIR = ROOT / "assets"
 AUDIT_DIR = ASSETS_DIR / "audit"
 REPORTS_DIR = ROOT / "reports"
 
-CITIZENS_URLS_PATH = ASSETS_DIR / "citizensbank_urls.txt"
+CITIZENS_URLS_PATH = AUDIT_DIR / "citizensbank_urls.txt"
 
 # Domain whitelist for security
 # Only URLs from these domains will be processed

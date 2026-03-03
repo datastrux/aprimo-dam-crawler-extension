@@ -8,6 +8,8 @@ from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from audit_common import (
     AUDIT_DIR,
@@ -24,9 +26,31 @@ from audit_common import (
 )
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
 }
+
+
+def build_http_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    retry = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        status=3,
+        backoff_factor=0.6,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "HEAD"],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 CHECKPOINT_PATH = AUDIT_DIR / "citizens_crawl_checkpoint.json"
 CHECKPOINT_VERSION = 1
@@ -179,6 +203,7 @@ def parse_images_from_html(page_url: str, html: str) -> set[str]:
 
 
 def crawl(urls: list[str], timeout: int, resume: bool) -> tuple[list[dict], list[dict], bool]:
+    session = build_http_session()
     resumed = False
     if resume:
         processed_urls, page_rows, image_rows = load_checkpoint()
@@ -220,7 +245,8 @@ def crawl(urls: list[str], timeout: int, resume: bool) -> tuple[list[dict], list
             "image_count": 0,
         }
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+            request_headers = {"Referer": "https://www.citizensbank.com/"}
+            resp = session.get(url, headers=request_headers, timeout=timeout, allow_redirects=True)
             row["http_status"] = resp.status_code
             row["final_url"] = normalize_url(resp.url)
 
