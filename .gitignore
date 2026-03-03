@@ -38,3 +38,19 @@ assets/audit/*.log
 assets/audit/*.bak
 !assets/audit/README.md
 !assets/audit/.gitkeep
+
+# Audit Reports (Generated Output)
+# These are large generated files that can be recreated by running the audit
+# Keep reports/ directory structure but ignore all generated content
+reports/*.html
+reports/*.xlsx
+reports/*.csv
+reports/*.json
+reports/*.txt
+!reports/.gitkeep
+!reports/README.md
+
+# Native Messaging Host (Machine-Specific)
+# Generated during setup with machine-specific absolute paths
+scripts/native_host.bat
+scripts/native_host.sh
