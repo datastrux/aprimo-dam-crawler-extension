@@ -38,6 +38,9 @@ assets/audit/*.log
 assets/audit/*.bak
 !assets/audit/README.md
 !assets/audit/.gitkeep
+# Exception: Allow core data files to be committed
+!assets/audit/dam_assets.json
+!assets/audit/citizensbank_urls.txt
 
 # Audit Reports (Generated Output)
 # These are large generated files that can be recreated by running the audit

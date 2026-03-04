@@ -8,13 +8,14 @@
 
   // DAM Asset Source Configuration (SharePoint-ready)
   const DAM_ASSET_CONFIG = {
-    enabled: false,  // Disabled by default - dam_assets.json is gitignored (not packaged)
+    enabled: true,  // dam_assets.json is now packaged with extension
     type: 'local',  // 'local' | 'url' | 'sharepoint'
     source: 'assets/audit/dam_assets.json',  // Local path or URL
-    autoImport: false,  // Auto-import on startup if no assets exist
-    // To enable auto-import:
-    // 1. For URL/SharePoint: Set type='url' or 'sharepoint', update source to full URL, set enabled=true, autoImport=true
-    // 2. For local: Package dam_assets.json with extension, set enabled=true, autoImport=true
+    autoImport: true,  // Auto-import on startup if no assets exist
+    // For URL/SharePoint migration:
+    // 1. Set type='url' or 'sharepoint'
+    // 2. Update source to full URL
+    // 3. Add authHeaders if needed
     // 
     // Future SharePoint example:
     // enabled: true,

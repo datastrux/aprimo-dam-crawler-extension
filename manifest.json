@@ -39,5 +39,11 @@
       "js": ["content.js"],
       "run_at": "document_idle"
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/audit/dam_assets.json"],
+      "matches": ["https://*.aprimo.com/*"]
+    }
   ]
 }
