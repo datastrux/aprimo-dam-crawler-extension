@@ -341,8 +341,8 @@ def crawl(urls: list[str], timeout: int, resume: bool) -> tuple[list[dict], list
 def main() -> None:
     global VERBOSE
     parser = argparse.ArgumentParser(description="Crawl citizensbank URLs and extract served image URLs")
-    parser.add_argument("--urls", type=Path, default=CITIZENS_URLS_PATH, help="Path to URL list file (local)")
-    parser.add_argument("--use-config", action="store_true", help="Use SharePoint-ready config from audit_common (ignores --urls)")
+    parser.add_argument("--urls", type=Path, default=None, help="Path to URL list file (local) - only used with --legacy")
+    parser.add_argument("--legacy", action="store_true", help="Use legacy file lookup instead of config (requires --urls)")
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--no-resume", dest="resume", action="store_false", help="Ignore checkpoint and start stage 01 from scratch")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging for debugging")
@@ -352,12 +352,14 @@ def main() -> None:
 
     ensure_dirs()
     
-    # Load URLs from configured source (SharePoint-ready) or traditional file path
-    if args.use_config:
-        print("[Config] Using SharePoint-ready data source configuration...")
-        urls = read_url_list_from_source("citizens_urls")
+    # Default: Use config-based loader (works with citizensbank_urls.txt)
+    # Legacy: Use old file lookup
+    if args.legacy:
+        urls_path = args.urls or CITIZENS_URLS_PATH
+        urls = read_url_list(urls_path)
     else:
-        urls = read_url_list(args.urls)
+        print("[Config] Using data source from audit_common configuration...")
+        urls = read_url_list_from_source("citizens_urls")
     
     if not urls:
         raise SystemExit("No URLs found to crawl")
