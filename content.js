@@ -6,6 +6,18 @@
   const ASSET_STORE = 'assets';
   const EXCLUDED_FILE_TYPES = new Set(['eps', 'svg']);
 
+  // DAM Asset Source Configuration (SharePoint-ready)
+  const DAM_ASSET_CONFIG = {
+    enabled: true,  // Set to false to disable auto-load
+    type: 'local',  // 'local' | 'url' | 'sharepoint' (future)
+    source: 'assets/audit/dam_assets.json',  // Local path or URL
+    autoImport: true,  // Auto-import on startup if no assets exist
+    // Future SharePoint config:
+    // type: 'sharepoint',
+    // source: 'https://yourcompany.sharepoint.com/sites/DAM/dam_assets.json',
+    // authHeaders: { 'Authorization': 'Bearer ...' }
+  };
+
   const runtime = {
     running: false,
     pausedByUser: false,
@@ -359,6 +371,54 @@
     state.stats.detailErrors = state.queue.detailErrors.length;
 
     return { requeuedCount };
+  }
+
+  async function fetchDamAssets() {
+    if (!DAM_ASSET_CONFIG.enabled || !DAM_ASSET_CONFIG.autoImport) {
+      console.log('[DAM Auto-Load] Disabled via config');
+      return { ok: false, reason: 'disabled' };
+    }
+
+    // Check if we already have assets
+    const existingCount = Object.keys(state.assets || {}).length;
+    if (existingCount > 0) {
+      console.log(`[DAM Auto-Load] Skipped: ${existingCount} assets already loaded`);
+      return { ok: false, reason: 'already_loaded', count: existingCount };
+    }
+
+    try {
+      console.log(`[DAM Auto-Load] Fetching from: ${DAM_ASSET_CONFIG.source}`);
+      const startTime = Date.now();
+      
+      let fetchUrl = DAM_ASSET_CONFIG.source;
+      
+      // For local extension files, resolve via chrome.runtime.getURL
+      if (DAM_ASSET_CONFIG.type === 'local') {
+        fetchUrl = chrome.runtime.getURL(DAM_ASSET_CONFIG.source);
+      }
+
+      const response = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: DAM_ASSET_CONFIG.authHeaders || {},
+        credentials: DAM_ASSET_CONFIG.type === 'sharepoint' ? 'include' : 'omit'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+      }
+
+      const payload = await response.json();
+      const elapsed = Date.now() - startTime;
+      
+      console.log(`[DAM Auto-Load] Fetched in ${elapsed}ms, importing...`);
+      const result = await importStatePayload(payload);
+      
+      console.log(`[DAM Auto-Load] ✓ Success: added ${result.added}, updated ${result.updated}`);
+      return { ok: true, ...result, elapsed };
+    } catch (err) {
+      console.error('[DAM Auto-Load] Failed:', err);
+      return { ok: false, error: String(err?.message || err) };
+    }
   }
 
   async function importStatePayload(payload) {
@@ -1078,6 +1138,10 @@
     if (!found) {
       await initializePersistentAssets();
     }
+    
+    // Auto-load DAM assets if configured and no assets exist
+    await fetchDamAssets();
+    
     if (typeof state.lastScrollY === 'number' && state.lastScrollY > 0) {
       setTimeout(() => window.scrollTo(0, state.lastScrollY), 500);
     }
