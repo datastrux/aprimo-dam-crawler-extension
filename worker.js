@@ -152,6 +152,10 @@ async function signCommand(command) {
  * @param {Object} command - Command to send
  */
 async function sendSignedCommand(command) {
+  console.log('[Worker] sendSignedCommand called:', command);
+  console.log('[Worker] auditPort exists:', !!auditPort);
+  console.log('[Worker] auditSecretKey exists:', !!auditSecretKey);
+  
   if (!auditPort) {
     console.error('[Worker] Cannot send command: no active port');
     return;
@@ -159,6 +163,7 @@ async function sendSignedCommand(command) {
   
   try {
     const signedCommand = await signCommand(command);
+    console.log('[Worker] Posting message to native host:', signedCommand);
     auditPort.postMessage(signedCommand);
   } catch (err) {
     console.error('[Worker] Failed to sign command:', err);
@@ -439,8 +444,10 @@ function attemptReconnect() {
 }
 
 function handleNativeDisconnect() {
+  const runtimeErr = chrome.runtime.lastError?.message;
+  console.log('[Worker] Native host disconnected:', runtimeErr);
+  
   if (auditRuntime.running) {
-    const runtimeErr = chrome.runtime.lastError?.message;
     auditRuntime.error = runtimeErr || auditRuntime.error || 'Native host disconnected unexpectedly';
     auditRuntime.message = auditRuntime.error;
     pushAuditLog(`WARNING: ${auditRuntime.error}`);
@@ -454,6 +461,8 @@ function handleNativeDisconnect() {
 }
 
 function startAuditNativeRun(mode, stage) {
+  console.log('[Worker] startAuditNativeRun called:', { mode, stage });
+  
   if (auditRuntime.running) {
     return { ok: false, error: 'Audit already running' };
   }
@@ -464,9 +473,13 @@ function startAuditNativeRun(mode, stage) {
   auditRuntime.startedAt = new Date().toISOString();
   auditRuntime.reconnectAttempts = 0;
 
+  console.log('[Worker] Connecting to native host:', AUDIT_NATIVE_HOST);
+  
   try {
     auditPort = chrome.runtime.connectNative(AUDIT_NATIVE_HOST);
+    console.log('[Worker] Native port created successfully');
   } catch (err) {
+    console.error('[Worker] Failed to create native port:', err);
     auditRuntime.running = false;
     auditRuntime.state = 'error';
     auditRuntime.error = String(err?.message || err);
@@ -477,6 +490,7 @@ function startAuditNativeRun(mode, stage) {
   auditPort.onMessage.addListener(handleAuditHostMessage);
   auditPort.onDisconnect.addListener(handleNativeDisconnect);
 
+  console.log('[Worker] Sending run command to native host...');
   sendSignedCommand({ command: 'run', mode, stage });
   pushAuditLog(`Started audit run mode=${mode}${stage ? ` stage=${stage}` : ''}`);
   
