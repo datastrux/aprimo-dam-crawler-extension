@@ -58,19 +58,12 @@ def verify_command_signature(command: dict[str, Any]) -> bool:
     
     # Recreate signature from command payload (without signature field)
     canonical = json.dumps(command, sort_keys=True, separators=(',', ':'))
-    sys.stderr.write(f"[NativeHost] Verifying signature for: {canonical}\n")
-    sys.stderr.write(f"[NativeHost] Secret (first 16): {SECRET_KEY[:8].hex()}...\n")
-    sys.stderr.write(f"[NativeHost] Provided signature: {provided_sig}\n")
-    
     canonical_bytes = canonical.encode('utf-8')
     expected_sig = hmac.new(SECRET_KEY, canonical_bytes, hashlib.sha256).hexdigest()
-    sys.stderr.write(f"[NativeHost] Expected signature: {expected_sig}\n")
     
     if not hmac.compare_digest(provided_sig, expected_sig):
         sys.stderr.write(f"[NativeHost] Rejected: Invalid signature\n")
         return False
-    
-    sys.stderr.write(f"[NativeHost] ✓ Signature valid\n")
     return True
 
 
