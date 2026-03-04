@@ -24,6 +24,30 @@
     // autoImport: true
   };
 
+  // Expiration Notification Configuration (SharePoint-ready)
+  const EXPIRATION_CONFIG = {
+    enabled: false,  // Enable to check for expiring assets
+    warningDays: 30,  // Warn when assets expire within this many days
+    checkOnStartup: true,  // Check for expiring assets on extension startup
+    // SharePoint notification settings (for future implementation)
+    sharepoint: {
+      enabled: false,  // Enable SharePoint notifications
+      notificationList: '',  // e.g., 'https://company.sharepoint.com/sites/DAM/Lists/ExpirationNotifications'
+      emailRecipients: [],  // e.g., ['imagemanager@company.com']
+      teamsWebhook: '',  // Optional Teams webhook URL
+      authToken: null  // Set via environment or secure storage
+    }
+  };
+
+  // Auto-Collection Configuration (collect URLs while browsing citizensbank.com)
+  const AUTO_COLLECTION_CONFIG = {
+    enabled: false,  // Enable to automatically collect URLs and images while browsing
+    collectPageUrls: true,  // Auto-add page URLs to collection list
+    collectImageSrcs: true,  // Auto-collect image sources from pages
+    stripQueryParams: true,  // Remove query params for unique URL list
+    storageKey: 'damAudit_autoCollected_v1'
+  };
+
   const runtime = {
     running: false,
     pausedByUser: false,
@@ -236,6 +260,55 @@
     if (normalized.includes('+')) normalized = normalized.split('+')[0] || normalized;
     if (normalized.includes(';')) normalized = normalized.split(';')[0].trim();
     return normalized || null;
+  }
+
+  /**
+   * Check if URL is a DAM asset URL (current or future pattern)
+   * Current: p1.aprimocdn.net/citizensbank/{asset-id}/{filename}
+   * Future: www.citizensbank.com/dam/{asset-id}/{seo-friendly-name}
+   */
+  function isDamUrl(url) {
+    if (!url) return false;
+    const urlLower = url.toLowerCase();
+    
+    // Current pattern
+    if (urlLower.includes('aprimocdn.net/citizensbank/')) return true;
+    
+    // Future pattern
+    if (urlLower.includes('citizensbank.com/dam/')) return true;
+    
+    return false;
+  }
+
+  /**
+   * Extract asset ID from DAM URL (current or future pattern)
+   */
+  function extractDamAssetId(url) {
+    if (!url) return null;
+    
+    // Current pattern: p1.aprimocdn.net/citizensbank/{asset-id}/{filename}
+    const currentMatch = url.match(/aprimocdn\.net\/citizensbank\/([^/]+)/i);
+    if (currentMatch) return currentMatch[1];
+    
+    // Future pattern: www.citizensbank.com/dam/{asset-id}/{seo-friendly-name}
+    const futureMatch = url.match(/citizensbank\.com\/dam\/([^/]+)/i);
+    if (futureMatch) return futureMatch[1];
+    
+    return null;
+  }
+
+  /**
+   * Identify which DAM URL pattern is used
+   * Returns: 'current', 'future', or null
+   */
+  function getDamUrlPattern(url) {
+    if (!url) return null;
+    const urlLower = url.toLowerCase();
+    
+    if (urlLower.includes('aprimocdn.net/citizensbank/')) return 'current';
+    if (urlLower.includes('citizensbank.com/dam/')) return 'future';
+    
+    return null;
   }
 
   function isExcludedAssetType(fileType) {
@@ -725,6 +798,230 @@
     return t;
   }
 
+  // ============================================================================
+  // Expiration & Auto-Collection Helpers (SharePoint-ready)
+  // ============================================================================
+
+  /**
+   * Parse expiration date string and calculate days until expiration
+   * @param {string} expirationDateStr - Date string from asset (various formats)
+   * @returns {Object|null} - {dateStr, daysUntil, isExpired, isExpiringSoon} or null
+   */
+  function parseExpirationDate(expirationDateStr) {
+    if (!expirationDateStr) return null;
+    
+    try {
+      const expDate = new Date(expirationDateStr);
+      if (isNaN(expDate.getTime())) return null;
+      
+      const now = new Date();
+      const diffMs = expDate - now;
+      const daysUntil = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      return {
+        dateStr: expirationDateStr,
+        date: expDate,
+        daysUntil,
+        isExpired: daysUntil < 0,
+        isExpiringSoon: daysUntil >= 0 && daysUntil <= EXPIRATION_CONFIG.warningDays
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get all expiring/expired assets from current state
+   * @returns {Object} - {expired: [], expiringSoon: []}
+   */
+  function getExpiringAssets() {
+    const expired = [];
+    const expiringSoon = [];
+    
+    for (const asset of Object.values(state.assets || {})) {
+      if (!asset?.expirationDate) continue;
+      
+      const expInfo = parseExpirationDate(asset.expirationDate);
+      if (!expInfo) continue;
+      
+      if (expInfo.isExpired) {
+        expired.push({ ...asset, expirationInfo: expInfo });
+      } else if (expInfo.isExpiringSoon) {
+        expiringSoon.push({ ...asset, expirationInfo: expInfo });
+      }
+    }
+    
+    // Sort by days until expiration (most urgent first)
+    expired.sort((a, b) => b.expirationInfo.daysUntil - a.expirationInfo.daysUntil);
+    expiringSoon.sort((a, b) => a.expirationInfo.daysUntil - b.expirationInfo.daysUntil);
+    
+    return { expired, expiringSoon };
+  }
+
+  /**
+   * Prepare expiration notification data for SharePoint/Teams/Email
+   * @param {Object} expiringData - Result from getExpiringAssets()
+   * @returns {Object} - Notification payload ready for SharePoint
+   */
+  function buildExpirationNotification(expiringData) {
+    const { expired, expiringSoon } = expiringData;
+    
+    return {
+      timestamp: nowIso(),
+      summary: {
+        totalExpired: expired.length,
+        totalExpiringSoon: expiringSoon.length,
+        warningDays: EXPIRATION_CONFIG.warningDays
+      },
+      expired: expired.map(asset => ({
+        itemId: asset.itemId,
+        fileName: asset.fileName,
+        itemUrl: asset.itemUrl,
+        expirationDate: asset.expirationDate,
+        daysExpired: Math.abs(asset.expirationInfo.daysUntil),
+        status: asset.status,
+        seenInCount: asset.seenInCount
+      })),
+      expiringSoon: expiringSoon.map(asset => ({
+        itemId: asset.itemId,
+        fileName: asset.fileName,
+        itemUrl: asset.itemUrl,
+        expirationDate: asset.expirationDate,
+        daysRemaining: asset.expirationInfo.daysUntil,
+        status: asset.status,
+        seenInCount: asset.seenInCount
+      })),
+      // SharePoint-ready metadata
+      metadata: {
+        reportedBy: 'DAM Audit Extension',
+        pageUrl: location.href,
+        source: state.source
+      }
+    };
+  }
+
+  /**
+   * Send expiration notification to SharePoint (future implementation)
+   * @param {Object} notificationData - Result from buildExpirationNotification()
+   */
+  async function sendExpirationNotification(notificationData) {
+    if (!EXPIRATION_CONFIG.sharepoint.enabled) {
+      console.log('[Expiration] SharePoint notifications disabled');
+      return;
+    }
+
+    // Future SharePoint implementation:
+    // 1. POST to SharePoint Lists REST API
+    // 2. Send email via Microsoft Graph API
+    // 3. Post to Teams webhook
+    
+    console.log('[Expiration] Notification ready:', notificationData);
+    
+    // Placeholder for SharePoint integration
+    // const response = await fetch(EXPIRATION_CONFIG.sharepoint.notificationList, {
+    //   method: 'POST',
+    //   headers: {
+    //     'Authorization': `Bearer ${EXPIRATION_CONFIG.sharepoint.authToken}`,
+    //     'Content-Type': 'application/json',
+    //     'Accept': 'application/json'
+    //   },
+    //   body: JSON.stringify(notificationData)
+    // });
+    
+    return notificationData;
+  }
+
+  /**
+   * Strip query parameters from URL for unique collection
+   * @param {string} url - Full URL with potential query params
+   * @returns {string} - Clean URL without query params
+   */
+  function stripQueryParams(url) {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url);
+      return `${parsed.origin}${parsed.pathname}`;
+    } catch {
+      return url.split('?')[0].split('#')[0];
+    }
+  }
+
+  /**
+   * Auto-collect current page URL if on citizensbank.com
+   */
+  async function autoCollectPageUrl() {
+    if (!AUTO_COLLECTION_CONFIG.enabled || !AUTO_COLLECTION_CONFIG.collectPageUrls) return;
+    
+    const currentUrl = location.href;
+    if (!currentUrl.includes('citizensbank.com')) return;
+    
+    const cleanUrl = AUTO_COLLECTION_CONFIG.stripQueryParams 
+      ? stripQueryParams(currentUrl) 
+      : currentUrl;
+    
+    // Get existing collection from storage
+    const stored = await chrome.storage.local.get(AUTO_COLLECTION_CONFIG.storageKey);
+    const collection = stored[AUTO_COLLECTION_CONFIG.storageKey] || { pageUrls: [], imageSrcs: [], lastUpdated: null };
+    
+    // Add URL if not already present
+    if (!collection.pageUrls.includes(cleanUrl)) {
+      collection.pageUrls.push(cleanUrl);
+      collection.lastUpdated = nowIso();
+      
+      await chrome.storage.local.set({ [AUTO_COLLECTION_CONFIG.storageKey]: collection });
+      console.log('[Auto-Collect] Added page URL:', cleanUrl);
+    }
+  }
+
+  /**
+   * Auto-collect image sources from current page if on citizensbank.com
+   */
+  async function autoCollectImageSrcs() {
+    if (!AUTO_COLLECTION_CONFIG.enabled || !AUTO_COLLECTION_CONFIG.collectImageSrcs) return;
+    
+    const currentUrl = location.href;
+    if (!currentUrl.includes('citizensbank.com')) return;
+    
+    // Find all images on page
+    const images = document.querySelectorAll('img[src]');
+    const imageSrcs = [];
+    
+    for (const img of images) {
+      let src = img.src;
+      if (!src) continue;
+      
+      // Convert relative URLs to absolute
+      try {
+        src = new URL(src, location.origin).href;
+      } catch {
+        continue;
+      }
+      
+      imageSrcs.push(src);
+    }
+    
+    if (!imageSrcs.length) return;
+    
+    // Get existing collection from storage
+    const stored = await chrome.storage.local.get(AUTO_COLLECTION_CONFIG.storageKey);
+    const collection = stored[AUTO_COLLECTION_CONFIG.storageKey] || { pageUrls: [], imageSrcs: [], lastUpdated: null };
+    
+    // Add new image sources (deduplicate)
+    let addedCount = 0;
+    for (const src of imageSrcs) {
+      if (!collection.imageSrcs.includes(src)) {
+        collection.imageSrcs.push(src);
+        addedCount++;
+      }
+    }
+    
+    if (addedCount > 0) {
+      collection.lastUpdated = nowIso();
+      await chrome.storage.local.set({ [AUTO_COLLECTION_CONFIG.storageKey]: collection });
+      console.log(`[Auto-Collect] Added ${addedCount} image sources`);
+    }
+  }
+
   function inferFileType(fileName, contentTypeLabel) {
     if (fileName && fileName.includes('.')) return normalizeFileType(fileName.split('.').pop());
     const label = String(contentTypeLabel || '');
@@ -1102,6 +1399,48 @@
           case 'DAM_CRAWLER_EXPORT_JSON':
             sendResponse(await exportJson());
             return;
+          case 'DAM_CRAWLER_GET_EXPIRING':
+            {
+              const expiringData = getExpiringAssets();
+              const notification = buildExpirationNotification(expiringData);
+              sendResponse({ ok: true, ...notification });
+            }
+            return;
+          case 'DAM_CRAWLER_SEND_EXPIRATION_NOTIFICATION':
+            {
+              const expiringData = getExpiringAssets();
+              const notification = buildExpirationNotification(expiringData);
+              await sendExpirationNotification(notification);
+              sendResponse({ ok: true, notification });
+            }
+            return;
+          case 'DAM_CRAWLER_GET_AUTO_COLLECTION':
+            {
+              const stored = await chrome.storage.local.get(AUTO_COLLECTION_CONFIG.storageKey);
+              const collection = stored[AUTO_COLLECTION_CONFIG.storageKey] || { pageUrls: [], imageSrcs: [], lastUpdated: null };
+              sendResponse({ ok: true, collection });
+            }
+            return;
+          case 'DAM_CRAWLER_EXPORT_AUTO_COLLECTION':
+            {
+              const stored = await chrome.storage.local.get(AUTO_COLLECTION_CONFIG.storageKey);
+              const collection = stored[AUTO_COLLECTION_CONFIG.storageKey] || { pageUrls: [], imageSrcs: [], lastUpdated: null };
+              
+              // Format for export
+              const exportData = {
+                metadata: {
+                  exportedAt: nowIso(),
+                  totalPageUrls: collection.pageUrls.length,
+                  totalImageSrcs: collection.imageSrcs.length,
+                  lastUpdated: collection.lastUpdated
+                },
+                pageUrls: collection.pageUrls,
+                imageSrcs: collection.imageSrcs
+              };
+              
+              sendResponse({ ok: true, data: exportData });
+            }
+            return;
           case 'DAM_CRAWLER_RESET':
             await resetState();
             sendResponse({ ok: true });
@@ -1125,6 +1464,34 @@
     
     // Auto-load DAM assets if configured and no assets exist
     await fetchDamAssets();
+    
+    // Check for expiring assets on startup if configured
+    if (EXPIRATION_CONFIG.enabled && EXPIRATION_CONFIG.checkOnStartup) {
+      const expiringData = getExpiringAssets();
+      if (expiringData.expired.length > 0 || expiringData.expiringSoon.length > 0) {
+        console.log(`[Expiration] Found ${expiringData.expired.length} expired, ${expiringData.expiringSoon.length} expiring soon`);
+        
+        // Send notification if SharePoint is enabled
+        if (EXPIRATION_CONFIG.sharepoint.enabled) {
+          const notification = buildExpirationNotification(expiringData);
+          await sendExpirationNotification(notification);
+        }
+      }
+    }
+    
+    // Auto-collect page URL and image sources if on citizensbank.com
+    if (AUTO_COLLECTION_CONFIG.enabled && location.href.includes('citizensbank.com')) {
+      await autoCollectPageUrl();
+      
+      // Wait for page to fully load before collecting images
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          setTimeout(() => autoCollectImageSrcs(), 1000);
+        });
+      } else {
+        setTimeout(() => autoCollectImageSrcs(), 1000);
+      }
+    }
     
     if (typeof state.lastScrollY === 'number' && state.lastScrollY > 0) {
       setTimeout(() => window.scrollTo(0, state.lastScrollY), 500);

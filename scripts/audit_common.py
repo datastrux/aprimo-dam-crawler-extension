@@ -61,7 +61,16 @@ ALLOWED_DOMAINS = {
     "*.aprimo.com",  # Any Aprimo subdomain (dam., cdn., etc.)
     "r1.previews.aprimo.com",
     "previews.aprimo.com",
-    "*.previews.aprimo.com"
+    "*.previews.aprimo.com",
+    
+    # Aprimo CDN domains (current DAM image serving)
+    "p1.aprimocdn.net",  # Current: p1.aprimocdn.net/citizensbank/{asset-id}/{filename}
+    "*.aprimocdn.net",  # Any Aprimo CDN subdomain
+    "aprimocdn.net",
+    
+    # Note: Future DAM URLs will be served from www.citizensbank.com/dam/*
+    # Pattern: www.citizensbank.com/dam/{asset-id}/{seo-friendly-name}
+    # Already covered by "www.citizensbank.com" above
 }
 
 
@@ -124,6 +133,88 @@ def validate_url_domain(url: str) -> bool:
                 return True
     
     return False
+
+
+def is_dam_url(url: str) -> bool:
+    """Check if URL is a DAM asset URL (current or future pattern).
+    
+    Current pattern: p1.aprimocdn.net/citizensbank/{asset-id}/{filename}
+    Future pattern: www.citizensbank.com/dam/{asset-id}/{seo-friendly-name}
+    
+    Args:
+        url: URL to check
+        
+    Returns:
+        True if URL matches a DAM asset pattern
+    """
+    if not url:
+        return False
+    
+    url_lower = url.lower()
+    
+    # Current pattern: p1.aprimocdn.net/citizensbank/
+    if 'aprimocdn.net/citizensbank/' in url_lower:
+        return True
+    
+    # Future pattern: www.citizensbank.com/dam/
+    if 'citizensbank.com/dam/' in url_lower:
+        return True
+    
+    return False
+
+
+def extract_dam_asset_id(url: str) -> str | None:
+    """Extract asset ID from DAM URL (current or future pattern).
+    
+    Current: p1.aprimocdn.net/citizensbank/{asset-id}/{filename}
+    Future: www.citizensbank.com/dam/{asset-id}/{seo-friendly-name}
+    
+    Args:
+        url: DAM asset URL
+        
+    Returns:
+        Asset ID string or None if not found
+    """
+    import re
+    
+    if not url:
+        return None
+    
+    # Current pattern: p1.aprimocdn.net/citizensbank/{asset-id}/{filename}
+    current_match = re.search(r'aprimocdn\.net/citizensbank/([^/]+)', url, re.IGNORECASE)
+    if current_match:
+        return current_match.group(1)
+    
+    # Future pattern: www.citizensbank.com/dam/{asset-id}/{seo-friendly-name}
+    future_match = re.search(r'citizensbank\.com/dam/([^/]+)', url, re.IGNORECASE)
+    if future_match:
+        return future_match.group(1)
+    
+    return None
+
+
+def get_dam_url_pattern(url: str) -> str | None:
+    """Identify which DAM URL pattern is used.
+    
+    Args:
+        url: DAM asset URL
+        
+    Returns:
+        'current' for aprimocdn.net pattern
+        'future' for citizensbank.com/dam pattern
+        None if not a DAM URL
+    """
+    if not url:
+        return None
+    
+    url_lower = url.lower()
+    
+    if 'aprimocdn.net/citizensbank/' in url_lower:
+        return 'current'
+    elif 'citizensbank.com/dam/' in url_lower:
+        return 'future'
+    
+    return None
 
 
 def load_json(path: Path) -> Any:
