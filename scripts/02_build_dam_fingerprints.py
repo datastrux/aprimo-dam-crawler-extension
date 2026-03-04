@@ -113,21 +113,22 @@ def build_fingerprints(assets_data: list | dict, timeout: int) -> list[dict]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build DAM image fingerprints from exported DAM assets JSON")
     parser.add_argument("--dam-json", type=Path, default=None, help="Path to DAM export JSON (local file)")
-    parser.add_argument("--use-config", action="store_true", help="Use SharePoint-ready config from audit_common (ignores --dam-json)")
+    parser.add_argument("--legacy", action="store_true", help="Use legacy file lookup instead of config (requires --dam-json or aprimo_dam_assets_master_*.json)")
     parser.add_argument("--timeout", type=int, default=20)
     args = parser.parse_args()
 
     ensure_dirs()
     
-    # Load DAM assets from configured source (SharePoint-ready) or traditional file path
-    if args.use_config:
-        print("[Config] Using SharePoint-ready data source configuration...")
-        assets_data = load_json_from_source("dam_assets")
-        dam_source = "SharePoint config"
-    else:
+    # Default: Use config-based loader (works with dam_assets.json from Phase 1)
+    # Legacy: Use old file lookup for aprimo_dam_assets_master_*.json
+    if args.legacy:
         dam_json = args.dam_json or latest_dam_export()
         assets_data = load_json(dam_json)
         dam_source = str(dam_json)
+    else:
+        print("[Config] Using data source from audit_common configuration...")
+        assets_data = load_json_from_source("dam_assets")
+        dam_source = "config: dam_assets.json"
     
     rows = build_fingerprints(assets_data, timeout=args.timeout)
 
