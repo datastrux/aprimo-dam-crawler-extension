@@ -8,14 +8,20 @@
 
   // DAM Asset Source Configuration (SharePoint-ready)
   const DAM_ASSET_CONFIG = {
-    enabled: true,  // Set to false to disable auto-load
-    type: 'local',  // 'local' | 'url' | 'sharepoint' (future)
+    enabled: false,  // Disabled by default - dam_assets.json is gitignored (not packaged)
+    type: 'local',  // 'local' | 'url' | 'sharepoint'
     source: 'assets/audit/dam_assets.json',  // Local path or URL
-    autoImport: true,  // Auto-import on startup if no assets exist
-    // Future SharePoint config:
+    autoImport: false,  // Auto-import on startup if no assets exist
+    // To enable auto-import:
+    // 1. For URL/SharePoint: Set type='url' or 'sharepoint', update source to full URL, set enabled=true, autoImport=true
+    // 2. For local: Package dam_assets.json with extension, set enabled=true, autoImport=true
+    // 
+    // Future SharePoint example:
+    // enabled: true,
     // type: 'sharepoint',
     // source: 'https://yourcompany.sharepoint.com/sites/DAM/dam_assets.json',
-    // authHeaders: { 'Authorization': 'Bearer ...' }
+    // authHeaders: { 'Authorization': 'Bearer ...' },
+    // autoImport: true
   };
 
   const runtime = {
@@ -375,7 +381,7 @@
 
   async function fetchDamAssets() {
     if (!DAM_ASSET_CONFIG.enabled || !DAM_ASSET_CONFIG.autoImport) {
-      console.log('[DAM Auto-Load] Disabled via config');
+      console.log('[DAM Auto-Load] Disabled via config (use Import JSON button for manual loading)');
       return { ok: false, reason: 'disabled' };
     }
 
@@ -395,6 +401,7 @@
       // For local extension files, resolve via chrome.runtime.getURL
       if (DAM_ASSET_CONFIG.type === 'local') {
         fetchUrl = chrome.runtime.getURL(DAM_ASSET_CONFIG.source);
+        console.log(`[DAM Auto-Load] Resolved URL: ${fetchUrl}`);
       }
 
       const response = await fetch(fetchUrl, {
@@ -417,6 +424,7 @@
       return { ok: true, ...result, elapsed };
     } catch (err) {
       console.error('[DAM Auto-Load] Failed:', err);
+      console.log('[DAM Auto-Load] Tip: Use the Import JSON button to manually load dam_assets.json');
       return { ok: false, error: String(err?.message || err) };
     }
   }
