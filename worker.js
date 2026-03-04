@@ -57,11 +57,29 @@ let auditSecretKey = null;
       console.log('[Worker] HMAC secret loaded from encrypted storage');
     } else {
       console.warn('[Worker] No HMAC secret found. Run: python scripts/generate_audit_secret.py');
+      console.warn('[Worker] Then in this console, run: await storeAuditSecret("YOUR_HEX_SECRET")');
     }
   } catch (err) {
     console.error('[Worker] Failed to load HMAC secret:', err);
   }
 })();
+
+/**
+ * Helper function to store audit secret from console
+ * Usage: await storeAuditSecret('6c2a3b5652d58561a0d1dfa01bd75832bcbea851fcd97e44c083b4a40a7e5ebe')
+ */
+globalThis.storeAuditSecret = async function(hexSecret) {
+  try {
+    await encryptedStorage.set({ auditSecretKey: hexSecret });
+    auditSecretKey = hexSecret;
+    console.log('✅ Secret stored in encrypted storage');
+    console.log('✅ Reload the extension to apply changes');
+    return true;
+  } catch (err) {
+    console.error('❌ Failed to store secret:', err);
+    return false;
+  }
+};
 
 /**
  * Sign command with HMAC-SHA256 signature
