@@ -7,9 +7,13 @@ from collections import defaultdict
 from pathlib import Path
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+# Disable SSL warnings for verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from audit_common import (
     AUDIT_DIR,
@@ -26,7 +30,11 @@ from audit_common import (
 )
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/114.0.0.0 Safari/537.36"
+    ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Cache-Control": "no-cache",
@@ -246,7 +254,15 @@ def crawl(urls: list[str], timeout: int, resume: bool) -> tuple[list[dict], list
         }
         try:
             request_headers = {"Referer": "https://www.citizensbank.com/"}
-            resp = session.get(url, headers=request_headers, timeout=timeout, allow_redirects=True)
+            resp = session.get(
+                url, 
+                headers=request_headers, 
+                timeout=timeout, 
+                allow_redirects=True,
+                verify=False  # Disable SSL verification to avoid 443 errors
+            )
+            # Set encoding explicitly for consistent text parsing
+            resp.encoding = resp.encoding or "utf-8"
             row["http_status"] = resp.status_code
             row["final_url"] = normalize_url(resp.url)
 
