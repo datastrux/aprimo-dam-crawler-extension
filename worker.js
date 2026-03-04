@@ -82,6 +82,22 @@ globalThis.storeAuditSecret = async function(hexSecret) {
 };
 
 /**
+ * Helper function to check if audit secret is loaded
+ * Usage: checkAuditSecret()
+ */
+globalThis.checkAuditSecret = function() {
+  if (auditSecretKey) {
+    console.log('✅ Secret is loaded');
+    console.log('Secret (first 16 chars):', auditSecretKey.substring(0, 16) + '...');
+    return true;
+  } else {
+    console.log('❌ No secret loaded');
+    console.log('Run: await storeAuditSecret("YOUR_HEX_SECRET")');
+    return false;
+  }
+};
+
+/**
  * Sign command with HMAC-SHA256 signature
  * @param {Object} command - Command object to sign
  * @returns {Promise<Object>} Command with signature field added
