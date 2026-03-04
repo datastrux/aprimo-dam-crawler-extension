@@ -15,6 +15,7 @@ from audit_common import (
     ensure_dirs,
     latest_dam_export,
     load_json,
+    load_json_from_source,
     normalize_url,
     sha256_bytes,
     validate_stage_output,
@@ -48,9 +49,14 @@ def image_phash(data: bytes) -> str | None:
         return None
 
 
-def build_fingerprints(dam_json: Path, timeout: int) -> list[dict]:
-    payload = load_json(dam_json)
-    assets = payload.get("assets", []) if isinstance(payload, dict) else payload
+def build_fingerprints(assets_data: list | dict, timeout: int) -> list[dict]:
+    """Build fingerprints from DAM assets data.
+    
+    Args:
+        assets_data: Either a list of assets or dict with 'assets' key
+        timeout: HTTP request timeout in seconds
+    """
+    assets = assets_data.get("assets", []) if isinstance(assets_data, dict) else assets_data
     total_assets = len(assets)
     
     print(f"Building fingerprints for {total_assets:,} DAM assets...")
@@ -106,19 +112,30 @@ def build_fingerprints(dam_json: Path, timeout: int) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build DAM image fingerprints from exported DAM assets JSON")
-    parser.add_argument("--dam-json", type=Path, default=None)
+    parser.add_argument("--dam-json", type=Path, default=None, help="Path to DAM export JSON (local file)")
+    parser.add_argument("--use-config", action="store_true", help="Use SharePoint-ready config from audit_common (ignores --dam-json)")
     parser.add_argument("--timeout", type=int, default=20)
     args = parser.parse_args()
 
     ensure_dirs()
-    dam_json = args.dam_json or latest_dam_export()
-    rows = build_fingerprints(dam_json, timeout=args.timeout)
+    
+    # Load DAM assets from configured source (SharePoint-ready) or traditional file path
+    if args.use_config:
+        print("[Config] Using SharePoint-ready data source configuration...")
+        assets_data = load_json_from_source("dam_assets")
+        dam_source = "SharePoint config"
+    else:
+        dam_json = args.dam_json or latest_dam_export()
+        assets_data = load_json(dam_json)
+        dam_source = str(dam_json)
+    
+    rows = build_fingerprints(assets_data, timeout=args.timeout)
 
     output = AUDIT_DIR / "dam_fingerprints.json"
     write_json(output, rows)
 
     print(json.dumps({
-        "dam_json": str(dam_json),
+        "dam_source": dam_source,
         "rows": len(rows),
         "ok": sum(1 for r in rows if r["fingerprint_status"] == "ok"),
         "missing_preview": sum(1 for r in rows if r["fingerprint_status"] == "missing_preview"),

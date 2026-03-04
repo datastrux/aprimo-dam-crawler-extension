@@ -24,6 +24,7 @@ from audit_common import (
     ensure_dirs,
     normalize_url,
     read_url_list,
+    read_url_list_from_source,
     safe_join,
     validate_stage_output,
     write_json,
@@ -340,7 +341,8 @@ def crawl(urls: list[str], timeout: int, resume: bool) -> tuple[list[dict], list
 def main() -> None:
     global VERBOSE
     parser = argparse.ArgumentParser(description="Crawl citizensbank URLs and extract served image URLs")
-    parser.add_argument("--urls", type=Path, default=CITIZENS_URLS_PATH)
+    parser.add_argument("--urls", type=Path, default=CITIZENS_URLS_PATH, help="Path to URL list file (local)")
+    parser.add_argument("--use-config", action="store_true", help="Use SharePoint-ready config from audit_common (ignores --urls)")
     parser.add_argument("--timeout", type=int, default=20)
     parser.add_argument("--no-resume", dest="resume", action="store_false", help="Ignore checkpoint and start stage 01 from scratch")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging for debugging")
@@ -349,7 +351,14 @@ def main() -> None:
     VERBOSE = args.verbose
 
     ensure_dirs()
-    urls = read_url_list(args.urls)
+    
+    # Load URLs from configured source (SharePoint-ready) or traditional file path
+    if args.use_config:
+        print("[Config] Using SharePoint-ready data source configuration...")
+        urls = read_url_list_from_source("citizens_urls")
+    else:
+        urls = read_url_list(args.urls)
+    
     if not urls:
         raise SystemExit("No URLs found to crawl")
 

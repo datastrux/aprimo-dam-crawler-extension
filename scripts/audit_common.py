@@ -14,6 +14,37 @@ REPORTS_DIR = ROOT / "reports"
 
 CITIZENS_URLS_PATH = AUDIT_DIR / "citizensbank_urls.txt"
 
+# ============================================================================
+# DATA SOURCE CONFIGURATION (SharePoint-Ready)
+# ============================================================================
+# To migrate to SharePoint, change 'type' to 'sharepoint' and update 'source'
+# The loader functions below will automatically handle remote URLs
+# ============================================================================
+
+DATA_SOURCE_CONFIG = {
+    # Citizens Bank URL List
+    "citizens_urls": {
+        "enabled": True,
+        "type": "local",  # 'local' | 'url' | 'sharepoint'
+        "source": str(CITIZENS_URLS_PATH),  # Local path or URL
+        # Future SharePoint example:
+        # "type": "sharepoint",
+        # "source": "https://company.sharepoint.com/sites/DAM/citizensbank_urls.txt",
+        # "auth_token": None,  # Set via environment variable
+    },
+    
+    # DAM Assets Catalog
+    "dam_assets": {
+        "enabled": True,
+        "type": "local",  # 'local' | 'url' | 'sharepoint'
+        "source": str(AUDIT_DIR / "dam_assets.json"),  # Local path or URL
+        # Future SharePoint example:
+        # "type": "sharepoint",
+        # "source": "https://company.sharepoint.com/sites/DAM/dam_assets.json",
+        # "auth_token": None,
+    },
+}
+
 # Domain whitelist for security
 # Only URLs from these domains will be processed
 # Supports exact matches and wildcard patterns (*.domain.com)
@@ -100,12 +131,88 @@ def load_json(path: Path) -> Any:
         return json.load(f)
 
 
+def fetch_from_source(source_key: str) -> str:
+    """Fetch data from configured source (local file or remote URL).
+    
+    Args:
+        source_key: Key in DATA_SOURCE_CONFIG (e.g., 'citizens_urls', 'dam_assets')
+        
+    Returns:
+        Text content from the source
+        
+    Raises:
+        ValueError: If source is not configured or disabled
+        FileNotFoundError: If local file doesn't exist
+        Exception: If remote fetch fails
+    """
+    import sys
+    
+    config = DATA_SOURCE_CONFIG.get(source_key)
+    if not config or not config.get("enabled"):
+        raise ValueError(f"Data source '{source_key}' is not configured or disabled")
+    
+    source_type = config.get("type", "local")
+    source = config.get("source")
+    
+    if not source:
+        raise ValueError(f"Data source '{source_key}' has no source path/URL configured")
+    
+    # Local file
+    if source_type == "local":
+        path = Path(source)
+        if not path.exists():
+            raise FileNotFoundError(f"Local file not found: {path}")
+        return path.read_text(encoding="utf-8")
+    
+    # Remote URL (including SharePoint)
+    elif source_type in ("url", "sharepoint"):
+        try:
+            import urllib.request
+            import urllib.error
+            
+            headers = {}
+            
+            # Add authentication for SharePoint
+            if source_type == "sharepoint" and config.get("auth_token"):
+                headers["Authorization"] = f"Bearer {config['auth_token']}"
+            
+            req = urllib.request.Request(source, headers=headers)
+            
+            sys.stderr.write(f"[Data Source] Fetching {source_key} from: {source}\n")
+            
+            with urllib.request.urlopen(req, timeout=30) as response:
+                return response.read().decode("utf-8")
+                
+        except urllib.error.URLError as e:
+            raise Exception(f"Failed to fetch {source_key} from {source}: {e}")
+    
+    else:
+        raise ValueError(f"Unknown source type '{source_type}' for {source_key}")
+
+
+def load_json_from_source(source_key: str) -> Any:
+    """Load JSON data from configured source (local or remote).
+    
+    Args:
+        source_key: Key in DATA_SOURCE_CONFIG
+        
+    Returns:
+        Parsed JSON data
+    """
+    text = fetch_from_source(source_key)
+    return json.loads(text)
+
+
 def write_json(path: Path, data: Any) -> None:
     with path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def read_url_list(path: Path) -> list[str]:
+    """Read URL list from local file path.
+    
+    For SharePoint-aware loading, use read_url_list_from_source() instead.
+    """
     import sys
     urls: list[str] = []
     seen = set()
@@ -129,6 +236,47 @@ def read_url_list(path: Path) -> list[str]:
             
             seen.add(normalized)
             urls.append(normalized)
+    
+    if rejected_count > 0:
+        sys.stderr.write(f"[Security] Rejected {rejected_count} URLs from non-whitelisted domains\n")
+    
+    return urls
+
+
+def read_url_list_from_source(source_key: str = "citizens_urls") -> list[str]:
+    """Read URL list from configured source (local file or SharePoint).
+    
+    Args:
+        source_key: Key in DATA_SOURCE_CONFIG (default: 'citizens_urls')
+        
+    Returns:
+        List of validated, normalized URLs
+    """
+    import sys
+    
+    text = fetch_from_source(source_key)
+    
+    urls: list[str] = []
+    seen = set()
+    rejected_count = 0
+    
+    for line in text.splitlines():
+        url = line.strip()
+        if not url or url.startswith("#"):
+            continue
+        normalized = normalize_url(url)
+        if normalized in seen:
+            continue
+        
+        # Validate domain against whitelist
+        if not validate_url_domain(normalized):
+            rejected_count += 1
+            if rejected_count <= 5:
+                sys.stderr.write(f"[Security] Rejected non-whitelisted URL: {normalized}\n")
+            continue
+        
+        seen.add(normalized)
+        urls.append(normalized)
     
     if rejected_count > 0:
         sys.stderr.write(f"[Security] Rejected {rejected_count} URLs from non-whitelisted domains\n")
