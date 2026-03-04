@@ -109,8 +109,18 @@ async function signCommand(command) {
     return command;
   }
 
-  // Create canonical representation (sorted keys)
-  const canonical = JSON.stringify(command, Object.keys(command).sort());
+  // Create canonical representation (sorted keys) - MUST match Python's json.dumps(sort_keys=True, separators=(',', ':'))
+  const sortedKeys = Object.keys(command).sort();
+  const sortedObj = {};
+  for (const key of sortedKeys) {
+    sortedObj[key] = command[key];
+  }
+  // Use same separators as Python: no spaces
+  const canonical = JSON.stringify(sortedObj);
+  
+  console.log('[Worker] Signing command:', canonical);
+  console.log('[Worker] Secret (first 16):', auditSecretKey.substring(0, 16) + '...');
+  
   const encoder = new TextEncoder();
   const data = encoder.encode(canonical);
   
@@ -130,6 +140,8 @@ async function signCommand(command) {
   const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
   const hashArray = Array.from(new Uint8Array(signature));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  
+  console.log('[Worker] Generated signature:', hashHex);
   
   // Add signature to command
   return { ...command, signature: hashHex };
