@@ -1036,28 +1036,7 @@
     return res;
   }
 
-  async function exportCsv() {
-    const rows = Object.values(state.assets);
-    const headers = [
-      'itemId','fileName','itemUrl','previewUrl','contentTypeLabel','fileType','status','expirationDate','usageRights','publicUrl','fileSize','detailFetched','detailFetchStatus','detailError','downloadedPreview','seenInCount','sourceKeys','firstSeenAt','lastSeenAt','lastSeenSourceKey'
-    ];
-    const csv = [headers.join(',')].concat(rows.map(r => headers.map(h => {
-      if (h === 'sourceKeys') return csvEscape((r.sourceKeys || []).join('|'));
-      return csvEscape(r[h]);
-    }).join(','))).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const blobUrl = URL.createObjectURL(blob);
-    const filename = `aprimo_dam_assets_master_${Date.now()}.csv`;
-    const res = await chrome.runtime.sendMessage({ type: 'DAM_CRAWLER_DOWNLOAD_BLOB', blobUrl, filename });
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
-    return res;
-  }
 
-  function csvEscape(v) {
-    if (v == null) return '';
-    const s = String(v);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  }
 
   async function resetState() {
     pauseMain();
@@ -1122,9 +1101,6 @@
           }
           case 'DAM_CRAWLER_EXPORT_JSON':
             sendResponse(await exportJson());
-            return;
-          case 'DAM_CRAWLER_EXPORT_CSV':
-            sendResponse(await exportCsv());
             return;
           case 'DAM_CRAWLER_RESET':
             await resetState();

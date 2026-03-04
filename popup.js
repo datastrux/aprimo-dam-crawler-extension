@@ -525,11 +525,6 @@ async function clickExportJson() {
   setStatus(res?.ok ? 'Exported JSON.' : (res?.error || 'Export failed'));
 }
 
-async function clickExportCsv() {
-  const res = await sendToContent({ type: 'DAM_CRAWLER_EXPORT_CSV' });
-  setStatus(res?.ok ? 'Exported CSV.' : (res?.error || 'Export failed'));
-}
-
 async function clickReset() {
   const res = await sendToContent({ type: 'DAM_CRAWLER_RESET' });
   setStatus(res?.ok ? 'State reset.' : (res?.error || 'Reset failed'));
@@ -540,7 +535,6 @@ document.getElementById('toggleRunBtn').addEventListener('click', () => clickTog
 document.getElementById('scanBtn').addEventListener('click', () => clickScan().catch(e => setStatus(String(e))));
 document.getElementById('recheckBtn').addEventListener('click', () => clickRecheckIncomplete().catch(e => setStatus(String(e))));
 document.getElementById('exportBtn').addEventListener('click', () => clickExportJson().catch(e => setStatus(String(e))));
-document.getElementById('exportCsvBtn').addEventListener('click', () => clickExportCsv().catch(e => setStatus(String(e))));
 document.getElementById('importBtn').addEventListener('click', () => clickImportJson().catch(e => setStatus(String(e))));
 document.getElementById('importFileInput').addEventListener('change', (e) => handleImportFileChange(e).catch(err => setStatus(String(err))));
 document.getElementById('resetBtn').addEventListener('click', () => clickReset().catch(e => setStatus(String(e))));
