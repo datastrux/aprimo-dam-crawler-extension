@@ -521,6 +521,8 @@ function stopAuditNativeRun() {
 restoreRuntime();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  console.log('[Worker] Received message:', msg?.type);
+  
   (async () => {
     try {
       if (msg?.type === 'DAM_CRAWLER_DOWNLOAD_BLOB') {
@@ -538,9 +540,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
 
       if (msg?.type === 'DAM_AUDIT_START') {
+        console.log('[Worker] DAM_AUDIT_START received, calling startAuditNativeRun');
         const mode = msg?.mode || 'pipeline';
         const stage = msg?.stage || null;
-        sendResponse(startAuditNativeRun(mode, stage));
+        const result = startAuditNativeRun(mode, stage);
+        console.log('[Worker] startAuditNativeRun result:', result);
+        sendResponse(result);
         return;
       }
 

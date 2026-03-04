@@ -482,7 +482,9 @@ function updatePipelinePhaseStatus(status) {
 }
 
 async function clickAuditRun() {
+  console.log('[Popup] clickAuditRun called');
   const res = await sendToWorker({ type: 'DAM_AUDIT_START', mode: 'pipeline' });
+  console.log('[Popup] Worker response:', res);
   if (!res?.ok) {
     setStatus(res?.error || 'Failed to start audit pipeline');
     await refreshAuditStatus();
