@@ -7,17 +7,15 @@
   const EXCLUDED_FILE_TYPES = new Set(['eps', 'svg']);
 
   // DAM Asset Source Configuration (SharePoint-ready)
+  // NOTE: dam_assets.json is the OUTPUT of Phase 1 (this extension's crawl)
+  // It should NOT be auto-loaded back into the extension.
+  // The packaged dam_assets.json is for Phases 2-6 (Python pipeline).
   const DAM_ASSET_CONFIG = {
-    enabled: true,  // dam_assets.json is now packaged with extension
+    enabled: false,  // Disabled - dam_assets.json is output, not input
     type: 'local',  // 'local' | 'url' | 'sharepoint'
-    source: 'assets/audit/dam_assets.json',  // Local path or URL
-    autoImport: true,  // Auto-import on startup if no assets exist
-    // For URL/SharePoint migration:
-    // 1. Set type='url' or 'sharepoint'
-    // 2. Update source to full URL
-    // 3. Add authHeaders if needed
-    // 
-    // Future SharePoint example:
+    source: 'assets/audit/dam_assets.json',  // For future SharePoint workflow
+    autoImport: false,  // Never auto-import our own output
+    // Future SharePoint workflow (when DAM assets are managed centrally):
     // enabled: true,
     // type: 'sharepoint',
     // source: 'https://yourcompany.sharepoint.com/sites/DAM/dam_assets.json',
@@ -1463,20 +1461,9 @@
       await initializePersistentAssets();
     }
     
-    // Auto-load DAM assets if configured and no assets exist
-    console.log('[DAM Crawler] Initializing...');
-    const autoLoadResult = await fetchDamAssets();
-    if (autoLoadResult?.ok) {
-      console.log(`[DAM Crawler] ✓ Auto-loaded ${autoLoadResult.added} DAM assets`);
-      await saveCheckpoint();
-    } else if (autoLoadResult?.reason === 'already_loaded') {
-      console.log(`[DAM Crawler] ℹ Using existing ${autoLoadResult.count} assets (auto-load skipped)`);
-    } else if (autoLoadResult?.reason === 'disabled') {
-      console.log('[DAM Crawler] ℹ Auto-load disabled (use Import JSON button)');
-    } else if (autoLoadResult?.error) {
-      console.warn('[DAM Crawler] ⚠ Auto-load failed:', autoLoadResult.error);
-      console.log('[DAM Crawler] Tip: Open DevTools Console to see detailed error');
-    }
+    // Note: dam_assets.json in repo is Phase 1 OUTPUT, not loaded into extension
+    // Extension creates fresh dam_assets.json by crawling Aprimo
+    // For resuming interrupted crawls, state is loaded from chrome.storage.local above
     
     // Check for expiring assets on startup if configured
     if (EXPIRATION_CONFIG.enabled && EXPIRATION_CONFIG.checkOnStartup) {

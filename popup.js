@@ -126,6 +126,17 @@ function displayStatusText(message, stats = {}) {
 }
 
 async function refresh() {
+  // First check if dam_assets.json exists (Phase 1 already complete)
+  const damAssetsExist = await checkDamAssetsExist();
+  
+  if (damAssetsExist) {
+    // Phase 1 is complete - show as done and collapse controls
+    setStatus('Phase 1 complete. Run Phases 2-6 below.');
+    renderPhase1Complete();
+    return;
+  }
+  
+  // Phase 1 not complete - need to be on Aprimo page
   try {
     const res = await sendToContent({ type: 'DAM_CRAWLER_STATUS' });
     if (!res?.ok) {
@@ -141,6 +152,59 @@ async function refresh() {
     setCompletionWarningNotice(false);
     setStatus('Open an Aprimo collection or space page and reload it.');
   }
+}
+
+async function checkDamAssetsExist() {
+  try {
+    const url = chrome.runtime.getURL('assets/audit/dam_assets.json');
+    const response = await fetch(url);
+    if (!response.ok) return false;
+    
+    // Verify it's valid JSON with assets
+    const data = await response.json();
+    return Array.isArray(data) && data.length > 0;
+  } catch (err) {
+    console.log('[Phase 1 Check] dam_assets.json not found or invalid:', err);
+    return false;
+  }
+}
+
+function renderPhase1Complete() {
+  // Update Phase 1 status
+  const damPhaseStatus = document.getElementById('damPhaseStatus');
+  if (damPhaseStatus) {
+    damPhaseStatus.textContent = 'Complete ✓';
+    damPhaseStatus.classList.add('success');
+    damPhaseStatus.classList.remove('active', 'error');
+  }
+  
+  // Hide stats (not needed)
+  const statsEl = document.querySelector('.section .stats');
+  if (statsEl) {
+    statsEl.style.display = 'none';
+  }
+  
+  // Hide all action buttons in Phase 1
+  const actionGrids = document.querySelectorAll('.section .actionGrid');
+  if (actionGrids.length > 0) {
+    // Hide first section's action grids (Phase 1 controls)
+    const phase1Section = document.querySelector('.section');
+    if (phase1Section) {
+      const phase1Actions = phase1Section.querySelectorAll('.actionGrid');
+      phase1Actions.forEach(grid => {
+        grid.style.display = 'none';
+      });
+    }
+  }
+  
+  // Hide checkbox
+  const checkbox = document.querySelector('.checkboxRow');
+  if (checkbox) {
+    checkbox.style.display = 'none';
+  }
+  
+  setCompletionNotice(false);
+  setCompletionWarningNotice(false);
 }
 
 function renderAuditStatus(status = {}) {
