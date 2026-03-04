@@ -1464,7 +1464,19 @@
     }
     
     // Auto-load DAM assets if configured and no assets exist
-    await fetchDamAssets();
+    console.log('[DAM Crawler] Initializing...');
+    const autoLoadResult = await fetchDamAssets();
+    if (autoLoadResult?.ok) {
+      console.log(`[DAM Crawler] ✓ Auto-loaded ${autoLoadResult.added} DAM assets`);
+      await saveCheckpoint();
+    } else if (autoLoadResult?.reason === 'already_loaded') {
+      console.log(`[DAM Crawler] ℹ Using existing ${autoLoadResult.count} assets (auto-load skipped)`);
+    } else if (autoLoadResult?.reason === 'disabled') {
+      console.log('[DAM Crawler] ℹ Auto-load disabled (use Import JSON button)');
+    } else if (autoLoadResult?.error) {
+      console.warn('[DAM Crawler] ⚠ Auto-load failed:', autoLoadResult.error);
+      console.log('[DAM Crawler] Tip: Open DevTools Console to see detailed error');
+    }
     
     // Check for expiring assets on startup if configured
     if (EXPIRATION_CONFIG.enabled && EXPIRATION_CONFIG.checkOnStartup) {

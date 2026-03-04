@@ -214,27 +214,27 @@ function renderAuditStatus(status = {}) {
 
 const PHASE_METADATA = {
   '01_crawl_citizens_images': {
-    number: 1,
+    number: 2,
     title: 'Collection Crawl',
     description: 'Discover and collect Citizens Bank image URLs'
   },
   '02_build_dam_fingerprints': {
-    number: 2,
+    number: 3,
     title: 'DAM Fingerprints',
     description: 'Generate perceptual hashes for DAM assets'
   },
   '03_build_citizens_fingerprints': {
-    number: 3,
+    number: 4,
     title: 'Web Fingerprints',
     description: 'Generate perceptual hashes for web images'
   },
   '04_match_assets': {
-    number: 4,
+    number: 5,
     title: 'Asset Matching',
     description: 'Match DAM assets to web images'
   },
   '05_build_reports': {
-    number: 5,
+    number: 6,
     title: 'Report Generation',
     description: 'Create comprehensive audit reports'
   }
