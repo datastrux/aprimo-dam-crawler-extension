@@ -24,35 +24,6 @@ Thumbs.db
 *.key
 *.pem
 
-# Audit Pipeline Data
-# These files contain sensitive/proprietary data and are large (>100MB)
-# See assets/audit/README.md for setup instructions
-# Patterns:
-#   - *.json: DAM asset catalog and generated fingerprints
-#   - *.txt: URL lists and crawl data
-#   - *.log: Runtime logs and debug output
-#   - *.bak: Backup files
-assets/audit/*.json
-assets/audit/*.txt
-assets/audit/*.log
-assets/audit/*.bak
-!assets/audit/README.md
-!assets/audit/.gitkeep
-# Exception: Allow core data files to be committed
-!assets/audit/dam_assets.json
-!assets/audit/citizensbank_urls.txt
-
-# Audit Reports (Generated Output)
-# These are large generated files that can be recreated by running the audit
-# Keep reports/ directory structure but ignore all generated content
-reports/*.html
-reports/*.xlsx
-reports/*.csv
-reports/*.json
-reports/*.txt
-!reports/.gitkeep
-!reports/README.md
-
 # Native Messaging Host (Machine-Specific)
 # Generated during setup with machine-specific absolute paths
 scripts/native_host.bat
