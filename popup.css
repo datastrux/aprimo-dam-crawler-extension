@@ -1,41 +1,474 @@
+/* Base Styles */
 body {
   margin: 0;
-  font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  background: #f7f7f8;
+  font: 13px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
   color: #1f2328;
 }
-.wrap { width: 360px; padding: 12px; }
-h1 { margin: 0 0 8px; font-size: 16px; }
-.status { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px; margin-bottom: 10px; }
-.notice { border-radius: 8px; padding: 8px; margin-bottom: 10px; border: 1px solid transparent; font-weight: 600; }
-.notice.success { background: #e9f8ee; border-color: #8fd2a5; color: #1f6b3a; }
-.notice.warning { background: #fff6df; border-color: #e6c46c; color: #7a5712; }
+
+.wrap { 
+  width: 420px; 
+  padding: 16px; 
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+/* Header */
+.header {
+  background: linear-gradient(135deg, #2f6feb 0%, #1f4ab9 100%);
+  color: white;
+  padding: 16px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(47, 111, 235, 0.2);
+}
+
+h1 { 
+  margin: 0 0 4px; 
+  font-size: 18px; 
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.subtitle {
+  font-size: 12px;
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+/* Status Messages */
+.status { 
+  background: #fff; 
+  border: 1px solid #d0d7de; 
+  border-radius: 8px; 
+  padding: 10px 12px; 
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #57606a;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.notice { 
+  border-radius: 8px; 
+  padding: 10px 12px; 
+  margin-bottom: 12px; 
+  border: 1px solid transparent; 
+  font-weight: 500;
+  font-size: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.notice.success { 
+  background: linear-gradient(135deg, #e9f8ee 0%, #dcf4e3 100%);
+  border-color: #6fbc82; 
+  color: #0f4d23; 
+}
+
+.notice.warning { 
+  background: linear-gradient(135deg, #fff8e6 0%, #ffedb8 100%);
+  border-color: #e3b341; 
+  color: #6b4e0a; 
+}
+
 .hidden { display: none; }
-.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-button { border: 1px solid #ccc; border-radius: 8px; padding: 8px; background: #fff; cursor: pointer; }
-button:hover { background: #f0f3f7; }
-.icon-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-.icon-btn img { width: 14px; height: 14px; object-fit: contain; }
-button.danger { border-color: #cc6b6b; }
-.stats { margin: 10px 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.stats div span { color: #555; }
-.auditBox { margin: 10px 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 8px; }
-.auditTitle { font-weight: 600; margin-bottom: 6px; }
-.status.small { margin-top: 8px; margin-bottom: 0; font-size: 12px; padding: 6px; }
-.auditStages { margin-top: 8px; border: 1px solid #e3e6eb; border-radius: 8px; background: #fafbfc; }
-.auditStageRow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-top: 1px solid #edf0f3; }
-.auditStageRow:first-child { border-top: 0; }
-.auditStageIndicator { width: 18px; text-align: center; font-size: 12px; color: #4b5563; }
-.auditStageName { flex: 1; font-size: 12px; color: #2a2f35; }
-.auditStageState { font-size: 11px; padding: 1px 6px; border-radius: 999px; border: 1px solid #d0d7de; color: #57606a; background: #ffffff; }
-.auditStageState.running { border-color: #9cbcf9; color: #214eac; background: #e8f0ff; }
-.auditStageState.completed { border-color: #95d3a3; color: #1f6b3a; background: #e9f8ee; }
-.auditStageState.error { border-color: #e2a5a5; color: #8b2e2e; background: #fff0f0; }
-.auditProgress { margin-top: 8px; }
-.auditProgressText { font-size: 12px; color: #444; margin-bottom: 4px; }
-.auditProgressSubtext { font-size: 12px; color: #555; margin-bottom: 4px; }
-.auditProgressBar { width: 100%; height: 8px; border-radius: 999px; background: #e4e8ee; overflow: hidden; }
-.auditProgressFill { height: 8px; width: 0%; background: #2f6feb; transition: width 200ms ease; }
-.row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
-.note { color: #555; font-size: 12px; }
-code { background: #eef1f5; padding: 1px 4px; border-radius: 4px; }
+
+/* Sections */
+.section {
+  background: white;
+  border: 1px solid #d0d7de;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e8ecf1;
+}
+
+.sectionTitle {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1f2328;
+}
+
+.phaseStatus {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  color: #57606a;
+  font-weight: 500;
+}
+
+.phaseStatus.active {
+  background: #ddf4ff;
+  border-color: #54aeff;
+  color: #0969da;
+}
+
+.phaseStatus.success {
+  background: #dafbe1;
+  border-color: #4ac26b;
+  color: #116329;
+}
+
+.phaseStatus.error {
+  background: #ffebe9;
+  border-color: #ff6b6b;
+  color: #d1242f;
+}
+
+/* Stats Grid */
+.stats { 
+  margin: 10px 0; 
+  background: #f6f8fa; 
+  border: 1px solid #d0d7de; 
+  border-radius: 8px; 
+  padding: 10px; 
+  display: grid; 
+  grid-template-columns: 1fr 1fr; 
+  gap: 8px; 
+}
+
+.stats div { 
+  font-size: 12px;
+}
+
+.stats div span { 
+  color: #656d76; 
+  font-weight: 400;
+}
+
+.stats div strong {
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.errorCount {
+  color: #d1242f !important;
+}
+
+/* Buttons */
+button { 
+  border: 1px solid #d0d7de; 
+  border-radius: 7px; 
+  padding: 9px 12px; 
+  background: white; 
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+button:hover { 
+  background: #f6f8fa;
+  border-color: #afb8c1;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+button:active {
+  transform: translateY(0);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.1);
+}
+
+button img { 
+  width: 14px; 
+  height: 14px; 
+  object-fit: contain; 
+}
+
+.primaryBtn {
+  background: linear-gradient(135deg, #2f6feb 0%, #1f4ab9 100%);
+  color: white;
+  border: none;
+  font-weight: 600;
+}
+
+.primaryBtn:hover {
+  background: linear-gradient(135deg, #1f5edb 0%, #1442a0 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(47, 111, 235, 0.3);
+}
+
+.secondaryBtn {
+  background: white;
+  color: #24292f;
+  border-color: #d0d7de;
+}
+
+.dangerBtn { 
+  background: white;
+  border-color: #d1242f;
+  color: #d1242f;
+}
+
+.dangerBtn:hover {
+  background: #ffebe9;
+  border-color: #a40e26;
+}
+
+.actionGrid { 
+  display: grid; 
+  grid-template-columns: repeat(2, 1fr); 
+  gap: 8px; 
+  margin: 10px 0;
+}
+
+.actionGrid.dangerZone {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #d0d7de;
+}
+
+/* Pipeline Status */
+.pipelineStatus {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #57606a;
+  margin: 10px 0;
+  white-space: pre-line;
+  line-height: 1.6;
+}
+
+/* Phase Progress */
+.phaseProgress {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.progressPhaseLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2328;
+}
+
+.progressPercent {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2f6feb;
+}
+
+.progressBarContainer {
+  width: 100%;
+  height: 10px;
+  background: #e8ecf1;
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.progressBarFill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #2f6feb 0%, #1f4ab9 100%);
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(47, 111, 235, 0.4);
+}
+
+.progressDetails {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.progressDetailText {
+  font-size: 11px;
+  color: #656d76;
+  font-weight: 500;
+}
+
+/* Phase Cards */
+.phaseCards {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phaseCard {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.phaseCard:hover {
+  background: #eef2f6;
+  transform: translateX(2px);
+}
+
+.phaseCard.running {
+  background: #ddf4ff;
+  border-color: #54aeff;
+  box-shadow: 0 0 0 2px rgba(84, 174, 255, 0.1);
+}
+
+.phaseCard.completed {
+  background: #dafbe1;
+  border-color: #4ac26b;
+}
+
+.phaseCard.error {
+  background: #ffebe9;
+  border-color: #ff818a;
+}
+
+.phaseIndicator {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid #d0d7de;
+  color: #57606a;
+  flex-shrink: 0;
+}
+
+.phaseCard.running .phaseIndicator {
+  border-color: #0969da;
+  color: #0969da;
+  animation: pulse 2s infinite;
+}
+
+.phaseCard.completed .phaseIndicator {
+  border-color: #116329;
+  color: #116329;
+}
+
+.phaseCard.error .phaseIndicator {
+  border-color: #d1242f;
+  color: #d1242f;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.phaseInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.phaseName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2328;
+  margin-bottom: 2px;
+}
+
+.phaseDescription {
+  font-size: 11px;
+  color: #656d76;
+  line-height: 1.4;
+}
+
+.phaseBadge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid #d0d7de;
+  color: #57606a;
+  background: white;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.phaseCard.running .phaseBadge {
+  background: #0969da;
+  border-color: #0969da;
+  color: white;
+}
+
+.phaseCard.completed .phaseBadge {
+  background: #116329;
+  border-color: #116329;
+  color: white;
+}
+
+.phaseCard.error .phaseBadge {
+  background: #d1242f;
+  border-color: #d1242f;
+  color: white;
+}
+
+/* Checkbox */
+.checkboxRow { 
+  display: flex; 
+  gap: 8px; 
+  align-items: center; 
+  margin: 10px 0;
+  padding: 8px;
+  background: #f6f8fa;
+  border-radius: 6px;
+}
+
+.checkboxRow input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.checkboxRow span {
+  font-size: 12px;
+  color: #57606a;
+}
+
+/* Footer */
+.footer {
+  margin-top: 8px;
+}
+
+.note { 
+  color: #656d76; 
+  font-size: 11px;
+  background: #f6f8fa;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #d0d7de;
+  text-align: center;
+}
+
+code { 
+  background: #eef1f5; 
+  padding: 2px 5px; 
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 11px;
+}

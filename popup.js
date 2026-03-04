@@ -61,7 +61,47 @@ function renderStats(s = {}) {
   document.getElementById('assetCount').textContent = s.assetCount ?? 0;
   document.getElementById('detailDone').textContent = s.detailDone ?? 0;
   document.getElementById('detailErrors').textContent = s.detailErrors ?? 0;
-  document.getElementById('running').textContent = String(!!s.running);
+  
+  const runningEl = document.getElementById('running');
+  const damPhaseStatus = document.getElementById('damPhaseStatus');
+  
+  if (s.running) {
+    runningEl.textContent = 'Active';
+    runningEl.style.color = '#0969da';
+    runningEl.style.fontWeight = '600';
+    if (damPhaseStatus) {
+      damPhaseStatus.textContent = 'Collecting';
+      damPhaseStatus.classList.add('active');
+      damPhaseStatus.classList.remove('success', 'error');
+    }
+  } else if (s.completedSuccessfully) {
+    runningEl.textContent = 'Complete';
+    runningEl.style.color = '#116329';
+    runningEl.style.fontWeight = '600';
+    if (damPhaseStatus) {
+      damPhaseStatus.textContent = 'Complete';
+      damPhaseStatus.classList.add('success');
+      damPhaseStatus.classList.remove('active', 'error');
+    }
+  } else if (s.completedWithErrors) {
+    runningEl.textContent = 'Error';
+    runningEl.style.color = '#d1242f';
+    runningEl.style.fontWeight = '600';
+    if (damPhaseStatus) {
+      damPhaseStatus.textContent = 'Has Errors';
+      damPhaseStatus.classList.add('error');
+      damPhaseStatus.classList.remove('active', 'success');
+    }
+  } else {
+    runningEl.textContent = 'Idle';
+    runningEl.style.color = '#57606a';
+    runningEl.style.fontWeight = '400';
+    if (damPhaseStatus) {
+      damPhaseStatus.textContent = 'Idle';
+      damPhaseStatus.classList.remove('active', 'success', 'error');
+    }
+  }
+  
   setCompletionNotice(!!s.completedSuccessfully);
   setCompletionWarningNotice(!!s.completedWithErrors);
   renderRunToggleButton(!!s.running);
@@ -70,7 +110,7 @@ function renderStats(s = {}) {
 function renderRunToggleButton(isRunning) {
   const label = document.getElementById('toggleRunLabel');
   const icon = document.getElementById('toggleRunIcon');
-  if (label) label.textContent = isRunning ? 'Pause' : 'Start / Resume';
+  if (label) label.textContent = isRunning ? 'Pause Collection' : 'Start Collection';
   if (icon) {
     icon.src = isRunning ? 'assets/images/pause.png' : 'assets/images/play.png';
     icon.alt = isRunning ? 'Pause' : 'Start';
@@ -172,10 +212,54 @@ function renderAuditStatus(status = {}) {
   el.textContent = statusText;
 }
 
-function stageLabel(stageName) {
+const PHASE_METADATA = {
+  '01_crawl_citizens_images': {
+    number: 1,
+    title: 'Collection Crawl',
+    description: 'Discover and collect Citizens Bank image URLs'
+  },
+  '02_build_dam_fingerprints': {
+    number: 2,
+    title: 'DAM Fingerprints',
+    description: 'Generate perceptual hashes for DAM assets'
+  },
+  '03_build_citizens_fingerprints': {
+    number: 3,
+    title: 'Web Fingerprints',
+    description: 'Generate perceptual hashes for web images'
+  },
+  '04_match_assets': {
+    number: 4,
+    title: 'Asset Matching',
+    description: 'Match DAM assets to web images'
+  },
+  '05_build_reports': {
+    number: 5,
+    title: 'Report Generation',
+    description: 'Create comprehensive audit reports'
+  }
+};
+
+function getPhaseMetadata(stageName) {
   const cleaned = String(stageName || '').replace(/\.py$/i, '');
+  const key = cleaned.replace(/^\d+_/, '');
+  
+  // Try direct match first
+  for (const [phaseKey, metadata] of Object.entries(PHASE_METADATA)) {
+    if (phaseKey.includes(key) || key.includes(phaseKey.replace(/^\d+_/, ''))) {
+      return metadata;
+    }
+  }
+  
+  // Fallback
   const withoutPrefix = cleaned.replace(/^\d+_/, '');
-  return withoutPrefix.replace(/_/g, ' ');
+  const title = withoutPrefix.replace(/_/g, ' ');
+  return { number: '?', title, description: '' };
+}
+
+function stageLabel(stageName) {
+  const metadata = getPhaseMetadata(stageName);
+  return metadata.title;
 }
 
 function renderAuditStages(status = {}) {
@@ -189,38 +273,55 @@ function renderAuditStages(status = {}) {
 
   container.innerHTML = stages.map((stage) => {
     const stageState = stage?.status || 'pending';
+    const metadata = getPhaseMetadata(stage?.name);
+    
     const indicator = stageState === 'completed'
       ? '✓'
       : stageState === 'error'
-        ? '!'
+        ? '✗'
         : stageState === 'running'
-          ? '⏳'
-          : '○';
-    const stateText = stageState === 'completed'
-      ? 'Completed'
+          ? '▶'
+          : metadata.number;
+    
+    const badgeText = stageState === 'completed'
+      ? 'Done'
       : stageState === 'error'
-        ? (stage?.message || 'Error')
+        ? 'Error'
         : stageState === 'running'
-          ? 'Running'
+          ? 'Active'
           : 'Pending';
-    const stateClass = ['running', 'completed', 'error'].includes(stageState) ? stageState : '';
-    return `<div class="auditStageRow"><span class="auditStageIndicator">${indicator}</span><span class="auditStageName">${stageLabel(stage?.name)}</span><span class="auditStageState ${stateClass}">${stateText}</span></div>`;
+    
+    const cardClass = ['running', 'completed', 'error'].includes(stageState) ? stageState : '';
+    
+    return `
+      <div class="phaseCard ${cardClass}">
+        <div class="phaseIndicator">${indicator}</div>
+        <div class="phaseInfo">
+          <div class="phaseName">${metadata.title}</div>
+          <div class="phaseDescription">${metadata.description || ''}</div>
+        </div>
+        <div class="phaseBadge">${badgeText}</div>
+      </div>
+    `;
   }).join('');
 }
 
 function renderAuditProgress(status = {}) {
   const wrap = document.getElementById('auditProgressWrap');
+  const phaseLabel = document.getElementById('auditProgressPhaseLabel');
+  const percentLabel = document.getElementById('auditProgressPercent');
   const urlText = document.getElementById('auditProgressUrlText');
   const imageText = document.getElementById('auditProgressImageText');
   const fill = document.getElementById('auditProgressFill');
-  if (!wrap || !urlText || !imageText || !fill) return;
+  if (!wrap || !phaseLabel || !percentLabel || !urlText || !imageText || !fill) return;
 
   const progress = status?.progress;
   const stage = status?.stage || '';
   const isStage01 = stage.includes('01_crawl');
+  const isRunning = status?.state === 'running' || status?.running;
   
-  // Only show queue metrics for stage 01
-  if (!isStage01) {
+  // Only show progress bar for stage 01 or when running
+  if (!isStage01 && !isRunning) {
     wrap.classList.add('hidden');
     fill.style.width = '0%';
     return;
@@ -231,7 +332,7 @@ function renderAuditProgress(status = {}) {
   const explicitPercent = Number(progress?.percent);
   const hasNumbers = Number.isFinite(current) && Number.isFinite(total) && total > 0;
 
-  if (!hasNumbers) {
+  if (!hasNumbers && isStage01) {
     wrap.classList.add('hidden');
     fill.style.width = '0%';
     return;
@@ -239,20 +340,30 @@ function renderAuditProgress(status = {}) {
 
   const percent = Number.isFinite(explicitPercent)
     ? explicitPercent
-    : Math.round((current / total) * 10000) / 100;
+    : hasNumbers ? Math.round((current / total) * 10000) / 100 : 0;
   const imagesDiscovered = Number(progress?.images_discovered);
   const imagesPending = Number(progress?.images_pending);
   const hasImageMetrics = Number.isFinite(imagesDiscovered);
   const boundedPercent = Math.max(0, Math.min(100, percent));
-  const resumedTag = progress?.resumed ? ' • resumed' : '';
-  const message = progress?.message ? ` • ${progress.message}` : '';
+  const metadata = getPhaseMetadata(stage);
 
   wrap.classList.remove('hidden');
   fill.style.width = `${boundedPercent}%`;
-  urlText.textContent = `URLs: ${current.toLocaleString()}/${total.toLocaleString()} (${boundedPercent.toFixed(2)}%)${resumedTag}${message}`;
-  imageText.textContent = hasImageMetrics
-    ? `Images: ${imagesDiscovered.toLocaleString()} (${Number.isFinite(imagesPending) ? Math.max(0, imagesPending).toLocaleString() : 0} pending)`
-    : 'Images: collecting...';
+  phaseLabel.textContent = `Phase ${metadata.number}: ${metadata.title}`;
+  percentLabel.textContent = `${boundedPercent.toFixed(1)}%`;
+  
+  if (hasNumbers) {
+    urlText.textContent = `URLs Processed: ${current.toLocaleString()} of ${total.toLocaleString()}`;
+  } else {
+    urlText.textContent = 'Processing...';
+  }
+  
+  if (hasImageMetrics) {
+    const pendingCount = Number.isFinite(imagesPending) ? Math.max(0, imagesPending) : 0;
+    imageText.textContent = `Images: ${imagesDiscovered.toLocaleString()} discovered, ${pendingCount.toLocaleString()} pending`;
+  } else {
+    imageText.textContent = 'Discovering images...';
+  }
 }
 
 async function refreshAuditStatus() {
@@ -263,6 +374,7 @@ async function refreshAuditStatus() {
       renderAuditStatus({ state: 'error', message: res?.error || 'Unable to load audit status' });
       renderAuditStages({});
       renderAuditProgress({});
+      updatePipelinePhaseStatus({ state: 'error' });
       return;
     }
     if (res.status?.progress) {
@@ -271,10 +383,37 @@ async function refreshAuditStatus() {
     renderAuditStatus(res.status || {});
     renderAuditStages(res.status || {});
     renderAuditProgress(res.status || {});
+    updatePipelinePhaseStatus(res.status || {});
   } catch (err) {
     renderAuditStatus({ state: 'error', message: String(err?.message || err) });
     renderAuditStages({});
     renderAuditProgress({});
+    updatePipelinePhaseStatus({ state: 'error' });
+  }
+}
+
+function updatePipelinePhaseStatus(status) {
+  const pipelineStatus = document.getElementById('pipelinePhaseStatus');
+  if (!pipelineStatus) return;
+  
+  const state = status?.state || 'idle';
+  const isRunning = state === 'running' || status?.running;
+  
+  if (isRunning) {
+    pipelineStatus.textContent = 'Running';
+    pipelineStatus.classList.add('active');
+    pipelineStatus.classList.remove('success', 'error');
+  } else if (state === 'completed') {
+    pipelineStatus.textContent = 'Complete';
+    pipelineStatus.classList.add('success');
+    pipelineStatus.classList.remove('active', 'error');
+  } else if (state === 'error') {
+    pipelineStatus.textContent = 'Error';
+    pipelineStatus.classList.add('error');
+    pipelineStatus.classList.remove('active', 'success');
+  } else {
+    pipelineStatus.textContent = 'Idle';
+    pipelineStatus.classList.remove('active', 'success', 'error');
   }
 }
 
