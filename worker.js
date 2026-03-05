@@ -539,25 +539,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
 
-      if (msg?.type === 'DAM_AUDIT_OPEN_OUTPUT') {
-        // Note: Browser cannot open file:// URLs to arbitrary local paths for security
-        // This will show the extension's bundled assets if they exist, or fail gracefully
-        // For production, consider hosting a web-based file viewer or using chrome.downloads API
-        try {
-          // Try to open extension-relative path (safer than file://)
-          const outputUrl = chrome.runtime.getURL('assets/audit/');
-          chrome.tabs.create({ url: outputUrl });
-          sendResponse({ ok: true });
-        } catch (err) {
-          // Fallback: show message that files must be accessed via File Explorer
-          sendResponse({ 
-            ok: false, 
-            error: 'Cannot open local folder from extension. Please navigate to: C:\\Users\\colle\\Downloads\\aprimo_dam_crawler_extension\\assets\\audit\\' 
-          });
-        }
-        return;
-      }
-
       sendResponse({ ok: false, error: 'Unknown message type' });
     } catch (err) {
       sendResponse({ ok: false, error: String(err?.message || err) });

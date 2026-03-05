@@ -504,10 +504,10 @@ async function clickAuditStop() {
 }
 
 async function clickOpenOutputFolder() {
-  const res = await sendToWorker({ type: 'DAM_AUDIT_OPEN_OUTPUT' });
-  if (!res?.ok) {
-    setStatus(res?.error || 'Failed to open output folder');
-  }
+  // Open the HTML report directly in a new tab
+  chrome.tabs.create({
+    url: chrome.runtime.getURL('reports/audit_report.html')
+  });
 }
 
 async function clickStart() {
