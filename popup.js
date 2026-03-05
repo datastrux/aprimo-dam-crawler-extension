@@ -126,11 +126,28 @@ function displayStatusText(message, stats = {}) {
 }
 
 async function refresh() {
-  // Always try to get current crawl state first
+  // Check if we have a master catalog first
+  const damAssets = await checkDamAssetsExist();
+  
+  // Try to get current crawl state
   try {
     const res = await sendToContent({ type: 'DAM_CRAWLER_STATUS' });
     if (res?.ok) {
-      // We have active state - show it
+      // If actively crawling, show live progress
+      if (res.stats?.running) {
+        renderStats(res.stats);
+        displayStatusText(res.message, res.stats);
+        return;
+      }
+      
+      // Not actively crawling - prefer master catalog count if available
+      if (damAssets.exists && damAssets.count > 0) {
+        setStatus(`Master catalog: ${damAssets.count.toLocaleString()} assets. Re-crawl DAM to add more.`);
+        renderPhase1Complete(damAssets.count);
+        return;
+      }
+      
+      // No master catalog yet - show chrome.storage state
       renderStats(res.stats);
       displayStatusText(res.message, res.stats);
       return;
@@ -141,8 +158,6 @@ async function refresh() {
   }
   
   // No active crawl - check if Phase 1 was previously completed
-  const damAssets = await checkDamAssetsExist();
-  
   if (damAssets.exists) {
     // Phase 1 is complete - show as done with asset count
     setStatus(`Master catalog: ${damAssets.count.toLocaleString()} assets. Re-crawl DAM to add more.`);
