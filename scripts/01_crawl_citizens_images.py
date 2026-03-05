@@ -20,6 +20,7 @@ from audit_common import (
     CITIZENS_IMAGES_SCHEMA,
     CITIZENS_URLS_PATH,
     allowed_image_extension,
+    is_allowed_audit_hostname,
     is_tracking_or_analytics_url,
     compress_citizens_images,
     ensure_dirs,
@@ -164,6 +165,9 @@ def parse_images_from_html(page_url: str, html: str) -> set[str]:
             if resolved and is_tracking_or_analytics_url(resolved):
                 if VERBOSE:
                     print(f"    ⊘ Skipped (tracking): {resolved}")
+            elif resolved and not is_allowed_audit_hostname(resolved):
+                if VERBOSE:
+                    print(f"    ⊘ Skipped (hostname not allowed): {resolved}")
             elif resolved and allowed_image_extension(resolved):
                 images.add(resolved)
                 if VERBOSE:
@@ -179,7 +183,7 @@ def parse_images_from_html(page_url: str, html: str) -> set[str]:
                 candidate = part.strip().split(" ")[0]
                 if candidate and not candidate.startswith("data:"):
                     resolved = safe_join(page_url, candidate)
-                    if resolved and not is_tracking_or_analytics_url(resolved) and allowed_image_extension(resolved):
+                    if resolved and not is_tracking_or_analytics_url(resolved) and is_allowed_audit_hostname(resolved) and allowed_image_extension(resolved):
                         images.add(resolved)
                         if VERBOSE:
                             print(f"    ✓ Accepted (srcset): {resolved}")
@@ -192,7 +196,7 @@ def parse_images_from_html(page_url: str, html: str) -> set[str]:
                 candidate = part.strip().split(" ")[0]
                 if candidate and not candidate.startswith("data:"):
                     resolved = safe_join(page_url, candidate)
-                    if resolved and not is_tracking_or_analytics_url(resolved) and allowed_image_extension(resolved):
+                    if resolved and not is_tracking_or_analytics_url(resolved) and is_allowed_audit_hostname(resolved) and allowed_image_extension(resolved):
                         images.add(resolved)
                         if VERBOSE:
                             print(f"    ✓ Accepted (picture): {resolved}")
@@ -204,7 +208,7 @@ def parse_images_from_html(page_url: str, html: str) -> set[str]:
     for _, candidate in style_urls:
         if candidate and not candidate.startswith("data:"):
             resolved = safe_join(page_url, candidate)
-            if resolved and not is_tracking_or_analytics_url(resolved) and allowed_image_extension(resolved):
+            if resolved and not is_tracking_or_analytics_url(resolved) and is_allowed_audit_hostname(resolved) and allowed_image_extension(resolved):
                 images.add(resolved)
                 if VERBOSE:
                     print(f"    ✓ Accepted (CSS): {resolved}")

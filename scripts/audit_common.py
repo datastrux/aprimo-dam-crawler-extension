@@ -439,6 +439,30 @@ def is_tracking_or_analytics_url(url: str) -> bool:
         return False
 
 
+def is_allowed_audit_hostname(url: str) -> bool:
+    """
+    Returns True if the image URL is from an allowed audit hostname.
+    Only images from www.citizensbank.com or p1.aprimocdn.net should be included.
+    """
+    try:
+        hostname = urlparse(url).hostname
+        if not hostname:
+            return False
+        
+        # Normalize to lowercase for comparison
+        hostname = hostname.lower()
+        
+        # Allowed hostnames for audit
+        allowed_hostnames = [
+            'www.citizensbank.com',
+            'p1.aprimocdn.net',
+        ]
+        
+        return hostname in allowed_hostnames
+    except Exception:
+        return False
+
+
 # JSON Schema definitions for validation
 CITIZENS_IMAGES_SCHEMA = {
     "type": "array",

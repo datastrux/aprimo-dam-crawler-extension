@@ -28,3 +28,22 @@ Thumbs.db
 # Generated during setup with machine-specific absolute paths
 scripts/native_host.bat
 scripts/native_host.sh
+
+# Audit Pipeline Outputs (Large generated files)
+# These are recreated by running the audit pipeline
+assets/audit/*.json
+!assets/audit/.gitkeep
+assets/audit/*.csv
+assets/audit/*.txt
+!assets/audit/citizensbank_urls.txt
+!assets/audit/README.md
+reports/*.html
+reports/*.xlsx
+reports/*.csv
+reports/*.json
+!reports/.gitkeep
+!reports/README.md
+
+# Image downloads
+aprimo_dam_previews/
+assets/images/

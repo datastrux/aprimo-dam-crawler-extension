@@ -126,32 +126,34 @@ function displayStatusText(message, stats = {}) {
 }
 
 async function refresh() {
-  // First check if dam_assets.json exists (Phase 1 already complete)
+  // Always try to get current crawl state first
+  try {
+    const res = await sendToContent({ type: 'DAM_CRAWLER_STATUS' });
+    if (res?.ok) {
+      // We have active state - show it
+      renderStats(res.stats);
+      displayStatusText(res.message, res.stats);
+      return;
+    }
+  } catch (e) {
+    // Content script not available or no active state
+    console.log('[Refresh] No active crawl state:', e);
+  }
+  
+  // No active crawl - check if Phase 1 was previously completed
   const damAssetsExist = await checkDamAssetsExist();
   
   if (damAssetsExist) {
-    // Phase 1 is complete - show as done and collapse controls
+    // Phase 1 is complete - show as done
     setStatus('Phase 1 complete. Run Phases 2-6 below.');
     renderPhase1Complete();
     return;
   }
   
-  // Phase 1 not complete - need to be on Aprimo page
-  try {
-    const res = await sendToContent({ type: 'DAM_CRAWLER_STATUS' });
-    if (!res?.ok) {
-      setCompletionNotice(false);
-      setCompletionWarningNotice(false);
-      setStatus(res?.error || 'Not ready on this page');
-      return;
-    }
-    renderStats(res.stats);
-    displayStatusText(res.message, res.stats);
-  } catch (e) {
-    setCompletionNotice(false);
-    setCompletionWarningNotice(false);
-    setStatus('Open an Aprimo collection or space page and reload it.');
-  }
+  // No active crawl and no dam_assets.json - show instructions
+  setCompletionNotice(false);
+  setCompletionWarningNotice(false);
+  setStatus('Open an Aprimo collection or space page and reload it.');
 }
 
 async function checkDamAssetsExist() {
