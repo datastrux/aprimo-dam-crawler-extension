@@ -178,29 +178,27 @@ function renderPhase1Complete() {
     damPhaseStatus.classList.remove('active', 'error');
   }
   
-  // Hide stats (not needed)
+  // Keep stats visible but update status text to show completion
   const statsEl = document.querySelector('.section .stats');
   if (statsEl) {
-    statsEl.style.display = 'none';
+    statsEl.style.display = 'grid';
   }
   
-  // Hide all action buttons in Phase 1
-  const actionGrids = document.querySelectorAll('.section .actionGrid');
-  if (actionGrids.length > 0) {
-    // Hide first section's action grids (Phase 1 controls)
-    const phase1Section = document.querySelector('.section');
-    if (phase1Section) {
-      const phase1Actions = phase1Section.querySelectorAll('.actionGrid');
-      phase1Actions.forEach(grid => {
-        grid.style.display = 'none';
-      });
-    }
+  // Keep all Phase 1 action buttons visible
+  // User can re-crawl DAM, export/import, or reset as needed
+  const phase1Section = document.querySelector('.section');
+  if (phase1Section) {
+    const phase1Actions = phase1Section.querySelectorAll('.actionGrid');
+    // Show all action grids
+    phase1Actions.forEach(grid => {
+      grid.style.display = 'grid';
+    });
   }
   
-  // Hide checkbox
+  // Keep checkbox visible for re-crawls
   const checkbox = document.querySelector('.checkboxRow');
   if (checkbox) {
-    checkbox.style.display = 'none';
+    checkbox.style.display = 'flex';
   }
   
   setCompletionNotice(false);
@@ -482,13 +480,27 @@ function updatePipelinePhaseStatus(status) {
 }
 
 async function clickAuditRun() {
-  const res = await sendToWorker({ type: 'DAM_AUDIT_START', mode: 'pipeline' });
+  // Get threshold value from UI
+  const thresholdInput = document.getElementById('phashThreshold');
+  const threshold = thresholdInput ? parseInt(thresholdInput.value, 10) : 8;
+  
+  // Validate threshold
+  if (isNaN(threshold) || threshold < 0 || threshold > 20) {
+    setStatus('Invalid threshold value. Must be between 0 and 20.');
+    return;
+  }
+  
+  const res = await sendToWorker({ 
+    type: 'DAM_AUDIT_START', 
+    mode: 'pipeline',
+    phashThreshold: threshold
+  });
   if (!res?.ok) {
     setStatus(res?.error || 'Failed to start audit pipeline');
     await refreshAuditStatus();
     return;
   }
-  setStatus('Audit pipeline started.');
+  setStatus(`Audit pipeline started (threshold: ${threshold}).`);
   await refreshAuditStatus();
 }
 

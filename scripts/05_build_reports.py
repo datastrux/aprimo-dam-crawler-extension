@@ -26,8 +26,8 @@ def emit_progress(current: int, total: int, message: str) -> None:
 
 
 def write_xlsx(summary: dict, master_rows: list[dict], unmatched_rows: list[dict], 
-               dam_dupes: list[dict], citizens_dupes: list[dict], 
-               governance: dict, output: Path) -> None:
+               dam_dupes: list[dict], dam_phash_dupes: list[dict], 
+               citizens_dupes: list[dict], governance: dict, output: Path) -> None:
     wb = Workbook()
 
     # Summary sheet
@@ -72,7 +72,7 @@ def write_xlsx(summary: dict, master_rows: list[dict], unmatched_rows: list[dict
     for row in unmatched_rows:
         ws_unmatched.append([row.get(h) for h in headers])
 
-    ws_dupes = wb.create_sheet("DAM Duplicates")
+    ws_dupes = wb.create_sheet("DAM Duplicates (Exact)")
     dup_headers = ["sha256", "count", "item_ids", "file_names"]
     ws_dupes.append(dup_headers)
     for cell in ws_dupes[1]:
@@ -80,6 +80,20 @@ def write_xlsx(summary: dict, master_rows: list[dict], unmatched_rows: list[dict
     for row in dam_dupes:
         ws_dupes.append([
             row.get("sha256"),
+            row.get("count"),
+            " | ".join(row.get("item_ids", [])),
+            " | ".join(row.get("file_names", [])),
+        ])
+    
+    # DAM Phash Duplicates (visually similar)
+    ws_phash_dupes = wb.create_sheet("DAM Duplicates (Similar)")
+    phash_dup_headers = ["phash_group", "count", "item_ids", "file_names"]
+    ws_phash_dupes.append(phash_dup_headers)
+    for cell in ws_phash_dupes[1]:
+        cell.font = Font(bold=True)
+    for row in dam_phash_dupes:
+        ws_phash_dupes.append([
+            " | ".join(row.get("phash_group", [])),
             row.get("count"),
             " | ".join(row.get("item_ids", [])),
             " | ".join(row.get("file_names", [])),
@@ -262,6 +276,7 @@ def main() -> None:
     parser.add_argument("--matches", type=Path, default=AUDIT_DIR / "match_results.json")
     parser.add_argument("--unmatched", type=Path, default=AUDIT_DIR / "unmatched_results.json")
     parser.add_argument("--dam-dupes", type=Path, default=AUDIT_DIR / "dam_internal_dupes.json")
+    parser.add_argument("--dam-phash-dupes", type=Path, default=AUDIT_DIR / "dam_phash_dupes.json")
     parser.add_argument("--citizens-dupes", type=Path, default=AUDIT_DIR / "citizens_duplicates.json")
     parser.add_argument("--governance", type=Path, default=AUDIT_DIR / "governance_metrics.json")
     args = parser.parse_args()
@@ -277,6 +292,11 @@ def main() -> None:
     dam_dupes = load_json(args.dam_dupes)
     
     # Load new governance data (may not exist in older runs)
+    try:
+        dam_phash_dupes = load_json(args.dam_phash_dupes)
+    except FileNotFoundError:
+        dam_phash_dupes = []
+    
     try:
         citizens_dupes = load_json(args.citizens_dupes)
     except FileNotFoundError:
@@ -308,6 +328,7 @@ def main() -> None:
         "unmatched": sum(1 for r in master_rows if r.get("match_status") in {"unmatched", "unmatched_error"}),
         "needs_dam_upload": sum(1 for r in master_rows if r.get("needs_dam_upload")),
         "dam_internal_dupe_groups": len(dam_dupes),
+        "dam_phash_dupe_groups": len(dam_phash_dupes),
         "citizens_duplicate_groups": len(citizens_dupes),
     }
 
@@ -324,7 +345,7 @@ def main() -> None:
     emit_progress(3, total_steps, "Generating Excel report...")
     xlsx_out = REPORTS_DIR / "citizens_dam_audit.xlsx"
     unmatched_rows = [r for r in master_rows if r.get("needs_dam_upload")]
-    write_xlsx(summary, master_rows, unmatched_rows, dam_dupes, citizens_dupes, governance, xlsx_out)
+    write_xlsx(summary, master_rows, unmatched_rows, dam_dupes, dam_phash_dupes, citizens_dupes, governance, xlsx_out)
     
     emit_progress(4, total_steps, "Generating HTML dashboard...")
     html_out = REPORTS_DIR / "audit_report.html"

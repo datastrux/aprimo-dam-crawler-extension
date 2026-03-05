@@ -104,6 +104,23 @@ python scripts/test_enhancements.py
 # Expected: All tests passed
 ```
 
+### Test Image Fingerprinting (On Machine with Network Access)
+```powershell
+python scripts/test_known_match.py
+# Expected: ✅ ALL TESTS PASSED
+```
+
+This test verifies:
+- Network access to Citizens Bank and Aprimo preview URLs
+- Image download and fingerprinting works correctly
+- Perceptual hash matching threshold is appropriate
+
+**Test cases:**
+1. Citizens to DAM: Champions in Action logo
+2. DAM to DAM duplicates: Bolsover images (phash duplicate detection)
+
+**Note:** This test requires network access to both Citizens Bank website and Aprimo preview server. Run this on the machine where you'll execute the audit pipeline.
+
 ### Test Native Messaging
 ```javascript
 // In Chrome DevTools → Service Worker console

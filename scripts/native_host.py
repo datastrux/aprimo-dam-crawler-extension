@@ -122,7 +122,7 @@ class NativeHost:
             payload["stage"] = stage
         self._write_message(payload)
 
-    def _run_script(self, script_name: str) -> tuple[int, str]:
+    def _run_script(self, script_name: str, extra_args: list[str] | None = None) -> tuple[int, str]:
         script_path = SCRIPTS_DIR / script_name
         if not script_path.exists():
             return 1, f"Script not found: {script_name}"
@@ -131,6 +131,8 @@ class NativeHost:
         env["PYTHONUNBUFFERED"] = "1"
         env["PYTHONIOENCODING"] = "utf-8"
         command = [sys.executable, "-u", str(script_path)]
+        if extra_args:
+            command.extend(extra_args)
         self._current_proc = subprocess.Popen(
             command,
             cwd=str(ROOT),
@@ -190,7 +192,7 @@ class NativeHost:
         self._current_proc = None
         return rc or 0, "\n".join(combined_lines)
 
-    def _run_pipeline(self, mode: str, stage: str | None) -> None:
+    def _run_pipeline(self, mode: str, stage: str | None, phash_threshold: int = 8) -> None:
         try:
             self._running = True
             self._stop_event.clear()
@@ -216,7 +218,13 @@ class NativeHost:
                 self._current_stage = stage_name
                 self._send_status("running", message=f"Running {stage_name}", stage=stage_name)
                 self._write_message({"type": "stage_start", "stage": stage_name, "ts": time.time(), "runId": self._run_id})
-                rc, output = self._run_script(stage_name)
+                
+                # Pass phash threshold to 04_match_assets.py
+                extra_args = None
+                if stage_name == "04_match_assets.py":
+                    extra_args = ["--phash-threshold", str(phash_threshold)]
+                
+                rc, output = self._run_script(stage_name, extra_args)
                 if rc != 0:
                     self._write_message({
                         "type": "error",
@@ -255,11 +263,11 @@ class NativeHost:
             self._stop_event.clear()
             self._current_proc = None
 
-    def _handle_run(self, mode: str, stage: str | None) -> None:
+    def _handle_run(self, mode: str, stage: str | None, phash_threshold: int = 8) -> None:
         if self._running:
             self._write_message({"type": "error", "error": "Audit already running", "ts": time.time()})
             return
-        self._runner_thread = threading.Thread(target=self._run_pipeline, args=(mode, stage), daemon=True)
+        self._runner_thread = threading.Thread(target=self._run_pipeline, args=(mode, stage, phash_threshold), daemon=True)
         self._runner_thread.start()
 
     def _handle_stop(self) -> None:
@@ -288,7 +296,8 @@ class NativeHost:
             if command == "run":
                 mode = message.get("mode") or "pipeline"
                 stage = message.get("stage")
-                self._handle_run(mode, stage)
+                phash_threshold = message.get("phash_threshold", 8)
+                self._handle_run(mode, stage, phash_threshold)
                 continue
 
             if command == "stop":

@@ -446,7 +446,7 @@ function handleNativeDisconnect() {
   auditPort = null;
 }
 
-function startAuditNativeRun(mode, stage) {
+function startAuditNativeRun(mode, stage, phashThreshold = 8) {
   if (auditRuntime.running) {
     return { ok: false, error: 'Audit already running' };
   }
@@ -470,8 +470,8 @@ function startAuditNativeRun(mode, stage) {
   auditPort.onMessage.addListener(handleAuditHostMessage);
   auditPort.onDisconnect.addListener(handleNativeDisconnect);
 
-  sendSignedCommand({ command: 'run', mode, stage });
-  pushAuditLog(`Started audit run mode=${mode}${stage ? ` stage=${stage}` : ''}`);
+  sendSignedCommand({ command: 'run', mode, stage, phash_threshold: phashThreshold });
+  pushAuditLog(`Started audit run mode=${mode}${stage ? ` stage=${stage}` : ''} threshold=${phashThreshold}`);
   
   startHeartbeat();
   persistRuntime();
@@ -519,7 +519,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'DAM_AUDIT_START') {
         const mode = msg?.mode || 'pipeline';
         const stage = msg?.stage || null;
-        sendResponse(startAuditNativeRun(mode, stage));
+        const phashThreshold = msg?.phashThreshold || 8;
+        sendResponse(startAuditNativeRun(mode, stage, phashThreshold));
         return;
       }
 

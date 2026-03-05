@@ -401,6 +401,44 @@ def allowed_image_extension(url: str) -> bool:
     return True
 
 
+def is_tracking_or_analytics_url(url: str) -> bool:
+    """
+    Returns True if the URL is from a known tracking/analytics domain.
+    These are not actual images, just tracking pixels.
+    """
+    try:
+        hostname = urlparse(url).hostname
+        if not hostname:
+            return False
+        
+        # Normalize to lowercase for comparison
+        hostname = hostname.lower()
+        
+        # Known tracking and analytics domains
+        tracking_domains = [
+            'google-analytics.com',
+            'googletagmanager.com',
+            'doubleclick.net',
+            'facebook.com',
+            'facebook.net',
+            'pinterest.com',
+            'ct.pinterest.com',
+            'linkedin.com',
+            'twitter.com',
+            'analytics.',  # Generic analytics subdomains
+            'tracking.',   # Generic tracking subdomains
+            'pixel.',      # Generic pixel subdomains
+        ]
+        
+        for domain in tracking_domains:
+            if domain in hostname:
+                return True
+        
+        return False
+    except Exception:
+        return False
+
+
 # JSON Schema definitions for validation
 CITIZENS_IMAGES_SCHEMA = {
     "type": "array",

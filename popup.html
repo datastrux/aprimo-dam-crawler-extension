@@ -72,6 +72,17 @@
         <button id="auditOpenOutputBtn" class="secondaryBtn">📂 View Reports</button>
       </div>
 
+      <div class="actionGrid" style="grid-template-columns: 1fr auto; align-items: center; gap: 8px;">
+        <label for="phashThreshold" style="font-size: 13px; color: #555;">Phash Match Threshold:</label>
+        <input 
+          id="phashThreshold" 
+          type="number" 
+          min="0" 
+          max="20" 
+          value="8" 
+          style="width: 60px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px;" />
+      </div>
+
       <!-- Progress Bar for Active Phase -->
       <div id="auditProgressWrap" class="phaseProgress hidden">
         <div class="progressHeader">

@@ -410,6 +410,30 @@ python scripts/generate_audit_secret.py
 - Certificate pinning for Aprimo DAM connections
 - Sandboxed subprocess execution for Python stages
 
+### Testing Audit Pipeline
+To verify fingerprinting and matching:
+```powershell
+# Test that known matching images are correctly identified
+# (requires network access to Citizens Bank and Aprimo previews)
+python scripts/test_known_match.py
+```
+
+This test verifies three known image pairs:
+1. **Citizens to DAM**: Champions in Action logo (32112-CIA976x550-1.jpg)
+2. **DAM to DAM**: Bolsover duplicates (EBM_0919_Bolsover vs Bolsover_Kristen-1580.jpg)
+
+For each pair, the test:
+- Downloads both images from their respective URLs
+- Computes perceptual hashes (phash)
+- Calculates hamming distance
+- Tests against multiple thresholds (5, 8, 10, 12, 15)
+- Provides threshold recommendations if images don't match
+
+Exit codes:
+- `0` = ALL PASS (all pairs match at current threshold)
+- `1` = FAIL (download or fingerprinting error)
+- `2` = WARNING (some pairs don't match, threshold adjustment needed)
+
 ### Testing Security
 To verify security features:
 1. **CSP**: Check DevTools console for CSP violations (should be none)

@@ -7,7 +7,11 @@ from pathlib import Path
 
 import imagehash
 import requests
+import urllib3
 from PIL import Image
+
+# Disable SSL warnings for verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 from audit_common import (
     AUDIT_DIR,
@@ -86,7 +90,7 @@ def build_fingerprints(assets_data: list | dict, timeout: int) -> list[dict]:
 
         if preview_url:
             try:
-                resp = requests.get(preview_url, timeout=timeout)
+                resp = requests.get(preview_url, timeout=timeout, verify=False)
                 if resp.ok:
                     data = resp.content
                     row["sha256"] = sha256_bytes(data)

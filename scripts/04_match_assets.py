@@ -191,6 +191,7 @@ def main() -> None:
     # Final progress
     emit_progress(total_citizens, total_citizens, "Asset matching complete")
 
+    # DAM duplicates: exact matches (SHA256)
     dam_dupes_by_sha = [
         {
             "sha256": sha,
@@ -201,6 +202,48 @@ def main() -> None:
         for sha, rows in dam_by_sha.items()
         if len(rows) > 1
     ]
+    
+    # DAM duplicates: visually similar images (phash)
+    # Group DAM assets by phash and find groups with multiple items
+    dam_by_phash: dict[str, list[dict]] = defaultdict(list)
+    for row in dam_ok_rows:
+        phash = row.get("phash")
+        if phash:
+            dam_by_phash[phash].append(row)
+    
+    # For each phash group with multiple items, check if they're truly duplicates
+    # by comparing phash distances (within threshold)
+    dam_phash_dupes = []
+    processed_phashes = set()
+    
+    for base_phash, base_rows in dam_by_phash.items():
+        if base_phash in processed_phashes or len(base_rows) <= 1:
+            continue
+        
+        # Start a duplicate group with this phash
+        dupe_group = list(base_rows)
+        group_phashes = {base_phash}
+        
+        # Find other phashes within threshold distance
+        for other_phash, other_rows in dam_by_phash.items():
+            if other_phash in group_phashes:
+                continue
+            
+            dist = phash_distance(base_phash, other_phash)
+            if dist is not None and dist <= args.phash_threshold:
+                dupe_group.extend(other_rows)
+                group_phashes.add(other_phash)
+        
+        # If we found a duplicate group, record it
+        if len(dupe_group) > 1:
+            dam_phash_dupes.append({
+                "phash_group": sorted(group_phashes),
+                "count": len(dupe_group),
+                "item_ids": sorted({x.get("item_id") for x in dupe_group if x.get("item_id")}),
+                "file_names": sorted({x.get("file_name") for x in dupe_group if x.get("file_name")}),
+                "preview_urls": sorted({x.get("preview_url") for x in dupe_group if x.get("preview_url")}),
+            })
+            processed_phashes.update(group_phashes)
     
     # Detect Citizens duplicates (same image served from multiple URLs)
     citizens_dupes_by_phash: dict[str, list[dict]] = defaultdict(list)
@@ -240,6 +283,7 @@ def main() -> None:
     write_json(AUDIT_DIR / "match_results.json", matches)
     write_json(AUDIT_DIR / "unmatched_results.json", unmatched)
     write_json(AUDIT_DIR / "dam_internal_dupes.json", dam_dupes_by_sha)
+    write_json(AUDIT_DIR / "dam_phash_dupes.json", dam_phash_dupes)
     write_json(AUDIT_DIR / "citizens_duplicates.json", citizens_duplicates)
     write_json(AUDIT_DIR / "governance_metrics.json", governance_metrics)
 
@@ -251,12 +295,14 @@ def main() -> None:
         "match_phash": sum(1 for m in matches if m.get("match_status") == "match_phash"),
         "unmatched": len(unmatched),
         "dam_internal_dupe_groups": len(dam_dupes_by_sha),
+        "dam_phash_dupe_groups": len(dam_phash_dupes),
         "citizens_duplicate_groups": len(citizens_duplicates),
         "governance": governance_metrics,
         "outputs": {
             "matches": str(AUDIT_DIR / "match_results.json"),
             "unmatched": str(AUDIT_DIR / "unmatched_results.json"),
             "dam_dupes": str(AUDIT_DIR / "dam_internal_dupes.json"),
+            "dam_phash_dupes": str(AUDIT_DIR / "dam_phash_dupes.json"),
             "citizens_dupes": str(AUDIT_DIR / "citizens_duplicates.json"),
             "governance": str(AUDIT_DIR / "governance_metrics.json"),
         },
