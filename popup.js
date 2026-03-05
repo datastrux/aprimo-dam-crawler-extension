@@ -56,6 +56,12 @@ function setCompletionWarningNotice(visible) {
   el.classList.toggle('hidden', !visible);
 }
 
+function setExportNeededNotice(visible) {
+  const el = document.getElementById('exportNeededNotice');
+  if (!el) return;
+  el.classList.toggle('hidden', !visible);
+}
+
 function renderStats(s = {}) {
   lastStats = s || {};
   document.getElementById('assetCount').textContent = s.assetCount ?? 0;
@@ -133,21 +139,36 @@ async function refresh() {
   try {
     const res = await sendToContent({ type: 'DAM_CRAWLER_STATUS' });
     if (res?.ok) {
+      const liveCount = res.stats?.assetCount ?? 0;
+      const masterCount = damAssets.count ?? 0;
+      
       // If actively crawling, show live progress
       if (res.stats?.running) {
+        renderStats(res.stats);
+        displayStatusText(res.message, res.stats);
+        setExportNeededNotice(false);
+        return;
+      }
+      
+      // Not actively crawling - check if export is needed
+      if (liveCount > masterCount && liveCount > 0) {
+        setStatus(`${liveCount.toLocaleString()} assets in cache (master: ${masterCount.toLocaleString()}). Export to save!`);
+        setExportNeededNotice(true);
         renderStats(res.stats);
         displayStatusText(res.message, res.stats);
         return;
       }
       
-      // Not actively crawling - prefer master catalog count if available
+      // Cache matches master - prefer master catalog count if available
       if (damAssets.exists && damAssets.count > 0) {
         setStatus(`Master catalog: ${damAssets.count.toLocaleString()} assets. Re-crawl DAM to add more.`);
+        setExportNeededNotice(false);
         renderPhase1Complete(damAssets.count);
         return;
       }
       
       // No master catalog yet - show chrome.storage state
+      setExportNeededNotice(false);
       renderStats(res.stats);
       displayStatusText(res.message, res.stats);
       return;
@@ -161,6 +182,7 @@ async function refresh() {
   if (damAssets.exists) {
     // Phase 1 is complete - show as done with asset count
     setStatus(`Master catalog: ${damAssets.count.toLocaleString()} assets. Re-crawl DAM to add more.`);
+    setExportNeededNotice(false);
     renderPhase1Complete(damAssets.count);
     return;
   }
@@ -168,6 +190,7 @@ async function refresh() {
   // No active crawl and no dam_assets.json - show instructions
   setCompletionNotice(false);
   setCompletionWarningNotice(false);
+  setExportNeededNotice(false);
   setStatus('Open an Aprimo collection or space page and reload it.');
 }
 
