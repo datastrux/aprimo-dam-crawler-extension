@@ -141,12 +141,12 @@ async function refresh() {
   }
   
   // No active crawl - check if Phase 1 was previously completed
-  const damAssetsExist = await checkDamAssetsExist();
+  const damAssets = await checkDamAssetsExist();
   
-  if (damAssetsExist) {
-    // Phase 1 is complete - show as done
-    setStatus('Phase 1 complete. Run Phases 2-6 below.');
-    renderPhase1Complete();
+  if (damAssets.exists) {
+    // Phase 1 is complete - show as done with asset count
+    setStatus(`Master catalog: ${damAssets.count.toLocaleString()} assets. Re-crawl DAM to add more.`);
+    renderPhase1Complete(damAssets.count);
     return;
   }
   
@@ -160,24 +160,36 @@ async function checkDamAssetsExist() {
   try {
     const url = chrome.runtime.getURL('assets/audit/dam_assets.json');
     const response = await fetch(url);
-    if (!response.ok) return false;
+    if (!response.ok) return { exists: false, count: 0 };
     
     // Verify it's valid JSON with assets
     const data = await response.json();
-    return Array.isArray(data) && data.length > 0;
+    const count = Array.isArray(data) ? data.length : 0;
+    return { exists: count > 0, count };
   } catch (err) {
     console.log('[Phase 1 Check] dam_assets.json not found or invalid:', err);
-    return false;
+    return { exists: false, count: 0 };
   }
 }
 
-function renderPhase1Complete() {
+function renderPhase1Complete(assetCount = 0) {
   // Update Phase 1 status
   const damPhaseStatus = document.getElementById('damPhaseStatus');
   if (damPhaseStatus) {
     damPhaseStatus.textContent = 'Complete ✓';
     damPhaseStatus.classList.add('success');
     damPhaseStatus.classList.remove('active', 'error');
+  }
+  
+  // Show existing asset count from master catalog
+  if (assetCount > 0) {
+    renderStats({
+      assetCount: assetCount,
+      detailDone: assetCount,
+      detailErrors: 0,
+      running: false,
+      completedSuccessfully: true
+    });
   }
   
   // Keep stats visible but update status text to show completion
