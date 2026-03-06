@@ -295,8 +295,24 @@ def load_json_from_source(source_key: str) -> Any:
 
 
 def write_json(path: Path, data: Any) -> None:
+    """Write data to JSON file, handling numpy int64 types."""
+    def convert_types(obj):
+        """Convert numpy types to Python native types for JSON serialization."""
+        # Handle numpy types if numpy is available
+        try:
+            import numpy as np
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+        except ImportError:
+            pass
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    
     with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2, default=convert_types)
 
 
 def read_url_list(path: Path) -> list[str]:
