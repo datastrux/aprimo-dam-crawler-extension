@@ -142,6 +142,8 @@ async function refresh() {
       const liveCount = res.stats?.assetCount ?? 0;
       const masterCount = damAssets.count ?? 0;
       
+      console.log('[Refresh] Live count:', liveCount, 'Master count:', masterCount);
+      
       // If actively crawling, show live progress
       if (res.stats?.running) {
         renderStats(res.stats);
@@ -151,13 +153,17 @@ async function refresh() {
       }
       
       // Not actively crawling - check if export is needed
+      // Use <= instead of > to avoid false positives
       if (liveCount > masterCount && liveCount > 0) {
+        console.log('[Refresh] Export needed - live > master');
         setStatus(`${liveCount.toLocaleString()} assets in cache (master: ${masterCount.toLocaleString()}). Export to save!`);
         setExportNeededNotice(true);
         renderStats(res.stats);
         displayStatusText(res.message, res.stats);
         return;
       }
+      
+      console.log('[Refresh] Counts match or master >= live');
       
       // Cache matches master - prefer master catalog count if available
       if (damAssets.exists && damAssets.count > 0) {
