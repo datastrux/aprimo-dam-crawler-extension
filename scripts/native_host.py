@@ -206,7 +206,25 @@ class NativeHost:
                     return
                 stages = [stage]
             else:
-                stages = PIPELINE_STAGES
+                # Pipeline mode - support resuming from a specific stage index
+                start_idx = 0
+                if stage is not None:
+                    try:
+                        start_idx = int(stage)
+                        if start_idx < 0 or start_idx >= len(PIPELINE_STAGES):
+                            self._write_message({"type": "error", "error": f"Invalid stage index: {stage}", "ts": time.time()})
+                            return
+                        self._write_message({
+                            "type": "info",
+                            "message": f"Resuming from stage {start_idx + 1}",
+                            "stage": PIPELINE_STAGES[start_idx],
+                            "ts": time.time()
+                        })
+                    except (ValueError, TypeError):
+                        self._write_message({"type": "error", "error": f"Invalid stage value: {stage}", "ts": time.time()})
+                        return
+                
+                stages = PIPELINE_STAGES[start_idx:]
 
             self._send_status("running", message="Audit run started")
 

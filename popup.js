@@ -548,9 +548,13 @@ async function clickAuditRun() {
     return;
   }
   
+  // Detect if we should resume from a failed stage
+  const resumeStage = await detectFailedStage();
+  
   const res = await sendToWorker({ 
     type: 'DAM_AUDIT_START', 
     mode: 'pipeline',
+    stage: resumeStage, // Will be null if starting fresh
     phashThreshold: threshold
   });
   if (!res?.ok) {
@@ -558,7 +562,12 @@ async function clickAuditRun() {
     await refreshAuditStatus();
     return;
   }
-  setStatus(`Audit pipeline started (threshold: ${threshold}).`);
+  
+  if (resumeStage) {
+    setStatus(`Resuming audit from stage ${resumeStage + 1} (threshold: ${threshold})...`);
+  } else {
+    setStatus(`Audit pipeline started (threshold: ${threshold}).`);
+  }
   await refreshAuditStatus();
 }
 
@@ -571,6 +580,37 @@ async function clickAuditStop() {
   }
   setStatus('Audit stop requested.');
   await refreshAuditStatus();
+}
+
+async function detectFailedStage() {
+  // Check which stages have completed by checking for output files
+  const stages = [
+    { file: 'assets/audit/citizens_images.json', name: '01 (Crawl)' },
+    { file: 'assets/audit/dam_fingerprints.json', name: '02 (DAM Fingerprints)' },
+    { file: 'assets/audit/citizens_fingerprints.json', name: '03 (Citizens Fingerprints)' },
+    { file: 'assets/audit/match_results.json', name: '04 (Match Assets)' },
+    { file: 'reports/audit_report.html', name: '05 (Reports)' },
+  ];
+  
+  for (let i = 0; i < stages.length; i++) {
+    try {
+      const url = chrome.runtime.getURL(stages[i].file);
+      const response = await fetch(url);
+      if (!response.ok) {
+        // This stage hasn't completed - resume from here
+        console.log(`[Resume] Stage ${i + 1} incomplete, will resume from here`);
+        return i; // Return 0-based stage index for native host
+      }
+    } catch (e) {
+      // File doesn't exist - resume from here
+      console.log(`[Resume] Stage ${i + 1} output missing, will resume from here`);
+      return i;
+    }
+  }
+  
+  // All stages complete - return null to start fresh
+  console.log('[Resume] All stages complete, starting fresh');
+  return null;
 }
 
 async function clickOpenOutputFolder() {
