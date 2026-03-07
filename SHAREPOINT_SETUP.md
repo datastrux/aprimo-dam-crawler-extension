@@ -1,6 +1,23 @@
 # SharePoint Lists Setup for DAM Governance
 
-This document describes the SharePoint Lists required for real-time DAM governance monitoring.
+This document describes the **5 SharePoint Lists** required for the hybrid data + governance architecture.
+
+---
+
+## Architecture Overview
+
+**Data Layer** (3 lists) - Persistent state, multi-user collaboration:
+1. **DAMAssets** - Master catalog of all DAM assets
+2. **DiscoveredImages** - Inventory of images found on citizensbank.com
+3. **ImageMappings** - Relationships between website images and DAM assets
+
+**Governance Layer** (1 list) - Events, monitoring, alerts:
+4. **GovernanceEvents** - Unified event log for expirations, duplicates, compliance issues
+
+**Legacy** (removed):
+- ~~AssetExpirations~~ → Now `GovernanceEvents` with `EventType='ExpirationReport'`
+- ~~AssetDuplicates~~ → Now `GovernanceEvents` with `EventType='DuplicateDetected'`
+- ~~ComplianceIssues~~ → Now `GovernanceEvents` with `EventType='ComplianceViolation'`
 
 ---
 
@@ -14,7 +31,231 @@ This document describes the SharePoint Lists required for real-time DAM governan
 
 ## Required SharePoint Lists
 
-### 1. Asset Expirations
+### Data Layer
+
+### 1. DAMAssets
+
+**List Name**: `DAMAssets`  
+**Purpose**: Master catalog of all Aprimo DAM assets (10,455+ assets)  
+**Update Frequency**: Daily sync from dam_assets.json
+
+#### Columns
+
+| Column Name | Type | Required | Description |
+|-------------|------|----------|-------------|
+| Title | Single line text | Yes | File name (user-friendly display) |
+| AssetID | Single line text | Yes | Aprimo item ID (unique key) |
+| FileName | Single line text | Yes | Original file name |
+| PreviewURL | Hyperlink | No | Preview image URL |
+| ExpirationDate | Date & Time | No | Asset expiration date |
+| Status | Choice | Yes | Active, Expiring Soon, Expired |
+| SHA256 | Single line text | No | SHA256 hash for exact matching |
+| pHash | Single line text | No | Perceptual hash for duplicate detection |
+| FileType | Single line text | No | jpg, png, etc. |
+| LastSyncedFromAprimo | Date & Time | Yes | When last updated from DAM |
+
+#### Choice Values for Status
+- Active
+- Expiring Soon (within 30 days)
+- Expired
+
+#### Sample Data
+
+```json
+{
+  "Title": "hero_homepage_2026.jpg",
+  "AssetID": "abc123xyz",
+  "FileName": "hero_homepage_2026.jpg",
+  "PreviewURL": "https://r1.previews.aprimo.com/...",
+  "ExpirationDate": "2026-12-31T00:00:00Z",
+  "Status": "Active",
+  "SHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "pHash": "f8d8c8c8a8a8c8c8",
+  "FileType": "jpg",
+  "LastSyncedFromAprimo": "2026-03-07T08:00:00Z"
+}
+```
+
+---
+
+### 2. DiscoveredImages
+
+**List Name**: `DiscoveredImages`  
+**Purpose**: Inventory of all images discovered on citizensbank.com  
+**Update Frequency**: Real-time as users browse (auto-collection)
+
+#### Columns
+
+| Column Name | Type | Required | Description |
+|-------------|------|----------|-------------|
+| Title | Single line text | Yes | Image URL (display) |
+| ImageURL | Hyperlink | Yes | Full URL of the image |
+| PageURL | Hyperlink | Yes | Page where image was found |
+| DiscoveredBy | Person or Group | No | Extension user who discovered it |
+| FirstSeen | Date & Time | Yes | When first discovered |
+| LastSeen | Date & Time | Yes | Most recent sighting |
+| Status | Choice | Yes | Active, Broken, Removed |
+| ImageAlt | Multiple lines text | No | Alt text for context |
+
+#### Choice Values for Status
+- Active
+- Broken (404/403 errors)
+- Removed (not seen in 90 days)
+
+#### Sample Data
+
+```json
+{
+  "Title": "https://www.citizensbank.com/images/hero.jpg",
+  "ImageURL": "https://www.citizensbank.com/images/hero.jpg",
+  "PageURL": "https://www.citizensbank.com/personal-banking",
+  "DiscoveredBy": "Web Team User",
+  "FirstSeen": "2026-02-15T14:22:00Z",
+  "LastSeen": "2026-03-07T10:15:00Z",
+  "Status": "Active",
+  "ImageAlt": "Personal Banking Hero"
+}
+```
+
+---
+
+### 3. ImageMappings
+
+**List Name**: `ImageMappings`  
+**Purpose**: Relationships between citizensbank.com images and DAM assets  
+**Update Frequency**: Created when matches are found
+
+#### Columns
+
+| Column Name | Type | Required | Description |
+|-------------|------|----------|-------------|
+| Title | Single line text | Yes | Auto-generated summary |
+| CitizensBankImageURL | Hyperlink | Yes | URL from DiscoveredImages |
+| DAMAssetID | Single line text | Yes | AssetID from DAMAssets list |
+| MatchConfidence | Number | Yes | 0-100 confidence score |
+| MatchMethod | Choice | Yes | SHA256, pHash, Manual |
+| IsDuplicate | Yes/No | No | Marks duplicate usage patterns |
+| LastVerified | Date & Time | Yes | When mapping was confirmed |
+
+#### Choice Values for MatchMethod
+- SHA256 (exact pixel match)
+- pHash (perceptual/visual similarity)
+- Manual (user-verified)
+
+#### Sample Data
+
+```json
+{
+  "Title": "www.citizensbank.com/images/hero.jpg → abc123xyz",
+  "CitizensBankImageURL": "https://www.citizensbank.com/images/hero.jpg",
+  "DAMAssetID": "abc123xyz",
+  "MatchConfidence": 100,
+  "MatchMethod": "SHA256",
+  "IsDuplicate": false,
+  "LastVerified": "2026-03-07T11:00:00Z"
+}
+```
+
+---
+
+### Governance Layer
+
+### 4. GovernanceEvents
+
+**List Name**: `GovernanceEvents`  
+**Purpose**: Unified event log for all governance monitoring (expirations, duplicates, compliance)  
+**Update Frequency**: Real-time event-driven
+
+#### Columns
+
+| Column Name | Type | Required | Description |
+|-------------|------|----------|-------------|
+| Title | Single line text | Yes | Event summary |
+| EventType | Choice | Yes | ExpirationReport, DuplicateDetected, ComplianceViolation |
+| EventDate | Date & Time | Yes | When event occurred |
+| EventData | Multiple lines text | Yes | JSON details specific to event type |
+| Severity | Choice | Yes | Low, Medium, High, Critical |
+| NotificationSent | Yes/No | Yes | Whether Teams/email was sent |
+| AssignedTo | Person or Group | No | Task owner (for actionable events) |
+| Status | Choice | Yes | New, InProgress, Resolved |
+
+#### Choice Values for EventType
+- ExpirationReport
+- DuplicateDetected
+- ComplianceViolation
+- BrokenImage (future)
+- UnmatchedImage (future)
+
+#### Choice Values for Severity
+- Low
+- Medium
+- High
+- Critical
+
+#### Choice Values for Status
+- New
+- InProgress
+- Resolved
+
+#### Sample Data
+
+**Expiration Report:**
+```json
+{
+  "Title": "Asset Expiration Report - 5 expired, 12 expiring soon",
+  "EventType": "ExpirationReport",
+  "EventDate": "2026-03-07T14:00:00Z",
+  "EventData": "{\"expiredCount\":5,\"expiringSoonCount\":12,\"expired\":[{\"itemId\":\"abc123\",\"fileName\":\"promo_2025.jpg\",\"daysExpired\":15}],\"expiringSoon\":[...]}",
+  "Severity": "High",
+  "NotificationSent": true,
+  "AssignedTo": "DAM Admin",
+  "Status": "New"
+}
+```
+
+**Duplicate Detection:**
+```json
+{
+  "Title": "Duplicate Detected: hero_homepage_2026.jpg",
+  "EventType": "DuplicateDetected",
+  "EventDate": "2026-03-07T09:30:00Z",
+  "EventData": "{\"newAssetId\":\"xyz789\",\"duplicateCount\":2,\"highestConfidence\":1.0,\"duplicateMatches\":[{\"type\":\"exact\",\"itemId\":\"abc123\"}]}",
+  "Severity": "High",
+  "NotificationSent": true,
+  "AssignedTo": "Content Team",
+  "Status": "InProgress"
+}
+```
+
+**Compliance Violation:**
+```json
+{
+  "Title": "Non-DAM URL Detected: www.citizensbank.com/personal-banking",
+  "EventType": "ComplianceViolation",
+  "EventDate": "2026-03-07T11:45:00Z",
+  "EventData": "{\"pageUrl\":\"https://www.citizensbank.com/personal-banking\",\"imageUrl\":\"https://www.citizensbank.com/images/hero.jpg\",\"expected\":\"DAM CDN URL\",\"actual\":\"Local copy\"}",
+  "Severity": "Medium",
+  "NotificationSent": false,
+  "AssignedTo": "Web Team",
+  "Status": "New"
+}
+```
+
+#### Power Automate Flow (Optional)
+
+**Trigger**: When item is created  
+**Conditions**:
+- If `EventType = 'ExpirationReport'` AND `Severity = 'High'` → Email DAM admin
+- If `EventType = 'DuplicateDetected'` AND `Severity = 'High'` → Post to Teams
+- If `EventType = 'ComplianceViolation'` AND `Severity >= 'Medium'` → Assign to web team
+
+---
+
+## Removed Lists (Now Consolidated)
+
+The following lists from the original 3-list design have been consolidated into `GovernanceEvents`:
+
+### ~~1. Asset Expirations~~ → `GovernanceEvents` with `EventType='ExpirationReport'`
 
 **List Name**: `AssetExpirations`  
 **Purpose**: Track expired and expiring DAM assets  
@@ -169,35 +410,64 @@ This document describes the SharePoint Lists required for real-time DAM governan
 # Connect to SharePoint site
 Connect-PnPOnline -Url "https://company.sharepoint.com/sites/DAM" -Interactive
 
-# Create Asset Expirations list
-New-PnPList -Title "AssetExpirations" -Template GenericList
-Add-PnPField -List "AssetExpirations" -DisplayName "ReportDate" -InternalName "ReportDate" -Type DateTime -Required
-Add-PnPField -List "AssetExpirations" -DisplayName "ExpiredCount" -InternalName "ExpiredCount" -Type Number -Required
-Add-PnPField -List "AssetExpirations" -DisplayName "ExpiringSoonCount" -InternalName "ExpiringSoonCount" -Type Number -Required
-Add-PnPField -List "AssetExpirations" -DisplayName "ExpiredAssets" -InternalName "ExpiredAssets" -Type Note
-Add-PnPField -List "AssetExpirations" -DisplayName "ExpiringSoonAssets" -InternalName "ExpiringSoonAssets" -Type Note
+Write-Host "`n=== Creating Data Layer Lists ===" -ForegroundColor Cyan
 
-# Create Asset Duplicates list
-New-PnPList -Title "AssetDuplicates" -Template GenericList
-Add-PnPField -List "AssetDuplicates" -DisplayName "DetectedDate" -InternalName "DetectedDate" -Type DateTime -Required
-Add-PnPField -List "AssetDuplicates" -DisplayName "NewAssetId" -InternalName "NewAssetId" -Type Text -Required
-Add-PnPField -List "AssetDuplicates" -DisplayName "NewAssetFileName" -InternalName "NewAssetFileName" -Type Text -Required
-Add-PnPField -List "AssetDuplicates" -DisplayName "NewAssetUrl" -InternalName "NewAssetUrl" -Type URL
-Add-PnPField -List "AssetDuplicates" -DisplayName "DuplicateCount" -InternalName "DuplicateCount" -Type Number -Required
-Add-PnPField -List "AssetDuplicates" -DisplayName "DuplicateMatches" -InternalName "DuplicateMatches" -Type Note
-Add-PnPField -List "AssetDuplicates" -DisplayName "HighestConfidence" -InternalName "HighestConfidence" -Type Number
+# List 1: DAMAssets (Master catalog)
+Write-Host "`nCreating DAMAssets list..." -ForegroundColor Yellow
+New-PnPList -Title "DAMAssets" -Template GenericList
+Add-PnPField -List "DAMAssets" -DisplayName "AssetID" -InternalName "AssetID" -Type Text -Required
+Add-PnPField -List "DAMAssets" -DisplayName "FileName" -InternalName "FileName" -Type Text -Required
+Add-PnPField -List "DAMAssets" -DisplayName "PreviewURL" -InternalName "PreviewURL" -Type URL
+Add-PnPField -List "DAMAssets" -DisplayName "ExpirationDate" -InternalName "ExpirationDate" -Type DateTime
+Add-PnPField -List "DAMAssets" -DisplayName "Status" -InternalName "Status" -Type Choice -Choices @("Active","Expiring Soon","Expired") -Required
+Add-PnPField -List "DAMAssets" -DisplayName "SHA256" -InternalName "SHA256" -Type Text
+Add-PnPField -List "DAMAssets" -DisplayName "pHash" -InternalName "pHash" -Type Text
+Add-PnPField -List "DAMAssets" -DisplayName "FileType" -InternalName "FileType" -Type Text
+Add-PnPField -List "DAMAssets" -DisplayName "LastSyncedFromAprimo" -InternalName "LastSyncedFromAprimo" -Type DateTime -Required
+Write-Host "✅ DAMAssets created" -ForegroundColor Green
 
-# Create Compliance Issues list
-New-PnPList -Title "ComplianceIssues" -Template GenericList
-Add-PnPField -List "ComplianceIssues" -DisplayName "DetectedDate" -InternalName "DetectedDate" -Type DateTime -Required
-Add-PnPField -List "ComplianceIssues" -DisplayName "PageUrl" -InternalName "PageUrl" -Type URL -Required
-Add-PnPField -List "ComplianceIssues" -DisplayName "ImageUrl" -InternalName "ImageUrl" -Type URL -Required
-Add-PnPField -List "ComplianceIssues" -DisplayName "ImageAlt" -InternalName "ImageAlt" -Type Text
-Add-PnPField -List "ComplianceIssues" -DisplayName "Expected" -InternalName "Expected" -Type Text -Required
-Add-PnPField -List "ComplianceIssues" -DisplayName "Actual" -InternalName "Actual" -Type Text -Required
-Add-PnPField -List "ComplianceIssues" -DisplayName "Severity" -InternalName "Severity" -Type Choice -Choices @("Low","Medium","High") -Required
+# List 2: DiscoveredImages (Website inventory)
+Write-Host "`nCreating DiscoveredImages list..." -ForegroundColor Yellow
+New-PnPList -Title "DiscoveredImages" -Template GenericList
+Add-PnPField -List "DiscoveredImages" -DisplayName "ImageURL" -InternalName "ImageURL" -Type URL -Required
+Add-PnPField -List "DiscoveredImages" -DisplayName "PageURL" -InternalName "PageURL" -Type URL -Required
+Add-PnPField -List "DiscoveredImages" -DisplayName "DiscoveredBy" -InternalName "DiscoveredBy" -Type User
+Add-PnPField -List "DiscoveredImages" -DisplayName "FirstSeen" -InternalName "FirstSeen" -Type DateTime -Required
+Add-PnPField -List "DiscoveredImages" -DisplayName "LastSeen" -InternalName "LastSeen" -Type DateTime -Required
+Add-PnPField -List "DiscoveredImages" -DisplayName "Status" -InternalName "Status" -Type Choice -Choices @("Active","Broken","Removed") -Required
+Add-PnPField -List "DiscoveredImages" -DisplayName "ImageAlt" -InternalName "ImageAlt" -Type Note
+Write-Host "✅ DiscoveredImages created" -ForegroundColor Green
 
-Write-Host "✅ SharePoint lists created successfully" -ForegroundColor Green
+# List 3: ImageMappings (Relationships)
+Write-Host "`nCreating ImageMappings list..." -ForegroundColor Yellow
+New-PnPList -Title "ImageMappings" -Template GenericList
+Add-PnPField -List "ImageMappings" -DisplayName "CitizensBankImageURL" -InternalName "CitizensBankImageURL" -Type URL -Required
+Add-PnPField -List "ImageMappings" -DisplayName "DAMAssetID" -InternalName "DAMAssetID" -Type Text -Required
+Add-PnPField -List "ImageMappings" -DisplayName "MatchConfidence" -InternalName "MatchConfidence" -Type Number -Required
+Add-PnPField -List "ImageMappings" -DisplayName "MatchMethod" -InternalName "MatchMethod" -Type Choice -Choices @("SHA256","pHash","Manual") -Required
+Add-PnPField -List "ImageMappings" -DisplayName "IsDuplicate" -InternalName "IsDuplicate" -Type Boolean
+Add-PnPField -List "ImageMappings" -DisplayName "LastVerified" -InternalName "LastVerified" -Type DateTime -Required
+Write-Host "✅ ImageMappings created" -ForegroundColor Green
+
+Write-Host "`n=== Creating Governance Layer Lists ===" -ForegroundColor Cyan
+
+# List 4: GovernanceEvents (Unified event log)
+Write-Host "`nCreating GovernanceEvents list..." -ForegroundColor Yellow
+New-PnPList -Title "GovernanceEvents" -Template GenericList
+Add-PnPField -List "GovernanceEvents" -DisplayName "EventType" -InternalName "EventType" -Type Choice -Choices @("ExpirationReport","DuplicateDetected","ComplianceViolation","BrokenImage","UnmatchedImage") -Required
+Add-PnPField -List "GovernanceEvents" -DisplayName "EventDate" -InternalName "EventDate" -Type DateTime -Required
+Add-PnPField -List "GovernanceEvents" -DisplayName "EventData" -InternalName "EventData" -Type Note -Required
+Add-PnPField -List "GovernanceEvents" -DisplayName "Severity" -InternalName "Severity" -Type Choice -Choices @("Low","Medium","High","Critical") -Required
+Add-PnPField -List "GovernanceEvents" -DisplayName "NotificationSent" -InternalName "NotificationSent" -Type Boolean -Required
+Add-PnPField -List "GovernanceEvents" -DisplayName "AssignedTo" -InternalName "AssignedTo" -Type User
+Add-PnPField -List "GovernanceEvents" -DisplayName "Status" -InternalName "Status" -Type Choice -Choices @("New","InProgress","Resolved") -Required
+Write-Host "✅ GovernanceEvents created" -ForegroundColor Green
+
+Write-Host "`n✅ All 5 SharePoint lists created successfully!" -ForegroundColor Green
+Write-Host "   - DAMAssets (Data)" -ForegroundColor White
+Write-Host "   - DiscoveredImages (Data)" -ForegroundColor White
+Write-Host "   - ImageMappings (Data)" -ForegroundColor White
+Write-Host "   - GovernanceEvents (Governance)" -ForegroundColor White
 ```
 
 ### Step 2: Configure Azure AD App Registration
@@ -284,15 +554,21 @@ Token (first 20 chars): eyJ0eXAiOiJKV1QiLCJ...
 
 ### Step 5: Update Governance Configuration
 
-Edit [governance.js](governance.js#L16-L33) to set your SharePoint URLs:
+Edit [governance.js](governance.js#L36-L54) to set your SharePoint URLs:
 
 ```javascript
 sharepoint: {
   enabled: true,
+  authTokenKey: 'sharepointAuthToken',
+  siteUrl: 'https://YOUR_SITE.sharepoint.com/sites/DAM',
   endpoints: {
-    expirations: 'https://YOUR_SITE.sharepoint.com/sites/DAM/_api/web/lists/getbytitle(\'AssetExpirations\')/items',
-    duplicates: 'https://YOUR_SITE.sharepoint.com/sites/DAM/_api/web/lists/getbytitle(\'AssetDuplicates\')/items',
-    compliance: 'https://YOUR_SITE.sharepoint.com/sites/DAM/_api/web/lists/getbytitle(\'ComplianceIssues\')/items'
+    // Data Layer
+    damAssets: 'https://YOUR_SITE.sharepoint.com/sites/DAM/_api/web/lists/getbytitle(\'DAMAssets\')/items',
+    discoveredImages: 'https://YOUR_SITE.sharepoint.com/sites/DAM/_api/web/lists/getbytitle(\'DiscoveredImages\')/items',
+    imageMappings: 'https://YOUR_SITE.sharepoint.com/sites/DAM/_api/web/lists/getbytitle(\'ImageMappings\')/items',
+    
+    // Governance Layer
+    governanceEvents: 'https://YOUR_SITE.sharepoint.com/sites/DAM/_api/web/lists/getbytitle(\'GovernanceEvents\')/items'
   },
   teamsWebhook: 'https://YOUR_TENANT.webhook.office.com/webhookb2/YOUR_WEBHOOK_ID'  // Optional
 }
