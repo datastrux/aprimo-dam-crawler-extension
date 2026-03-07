@@ -120,8 +120,9 @@ def write_xlsx(summary: dict, master_rows: list[dict], unmatched_rows: list[dict
     wb.save(output)
 
 
-def write_html(master_rows: list[dict], governance: dict, output: Path) -> None:
+def write_html(master_rows: list[dict], summary: dict, governance: dict, output: Path) -> None:
     payload = json.dumps(master_rows, ensure_ascii=False)
+    summary_payload = json.dumps(summary, ensure_ascii=False)
     
     # Format governance metrics
     total_matched = governance.get("total_matched_images", 0)
@@ -131,6 +132,17 @@ def write_html(master_rows: list[dict], governance: dict, output: Path) -> None:
     dupe_groups = governance.get("citizens_duplicate_groups", 0)
     dupe_urls = governance.get("total_duplicate_urls", 0)
     
+    # Extract summary metrics
+    total_images = summary.get("citizens_images_total", 0)
+    matched_direct = summary.get("matched_url_direct", 0)
+    matched_exact = summary.get("matched_exact", 0)
+    matched_phash = summary.get("matched_phash", 0)
+    unmatched = summary.get("unmatched", 0)
+    needs_upload = summary.get("needs_dam_upload", 0)
+    dam_exact_dupes = summary.get("dam_internal_dupe_groups", 0)
+    dam_phash_dupes = summary.get("dam_phash_dupe_groups", 0)
+    citizens_dupes = summary.get("citizens_duplicate_groups", 0)
+    
     html = f"""<!doctype html>
 <html>
 <head>
@@ -138,20 +150,42 @@ def write_html(master_rows: list[dict], governance: dict, output: Path) -> None:
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>Citizens vs DAM Audit Report</title>
   <style>
-    body {{ font-family: Segoe UI, Arial, sans-serif; margin: 16px; }}
-    .controls {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }}
-    input, select {{ padding: 6px; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
-    th, td {{ border: 1px solid #ddd; padding: 6px; vertical-align: top; }}
-    th {{ background: #f3f3f3; position: sticky; top: 0; }}
-    .pill {{ padding: 2px 6px; border-radius: 10px; font-size: 11px; color: #333; }}
-    .match_url_direct {{ background: #c3f0ca; color: #0d5e1e; font-weight: bold; }}
-    .match_exact {{ background: #dff6e7; }}
-    .match_phash {{ background: #fff6dd; }}
-    .unmatched {{ background: #fde8e8; }}
-    .badge {{ padding: 2px 4px; background: #e0e0e0; border-radius: 3px; font-size: 10px; }}
+    body {{ font-family: Segoe UI, Arial, sans-serif; margin: 16px; background: #f8f9fa; }}
+    .container {{ max-width: 1400px; margin: 0 auto; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+    h1 {{ margin-top: 0; color: #212529; }}
+    h2 {{ color: #495057; border-bottom: 2px solid #dee2e6; padding-bottom: 8px; margin-top: 32px; }}
+    .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin: 24px 0; }}
+    .summary-item {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 12px 16px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; }}
+    .summary-item:hover {{ background: #e9ecef; border-color: #adb5bd; transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }}
+    .summary-item .label {{ font-size: 13px; color: #6c757d; font-weight: 500; }}
+    .summary-item .value {{ font-size: 24px; font-weight: bold; color: #212529; }}
+    .summary-item.primary {{ border-left: 4px solid #007bff; }}
+    .summary-item.success {{ border-left: 4px solid #28a745; }}
+    .summary-item.warning {{ border-left: 4px solid #ffc107; }}
+    .summary-item.danger {{ border-left: 4px solid #dc3545; }}
+    .summary-item.info {{ border-left: 4px solid #17a2b8; }}
+    .controls {{ display: flex; gap: 8px; margin: 16px 0 12px 0; flex-wrap: wrap; align-items: center; }}
+    .controls button {{ padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }}
+    .controls button:hover {{ background: #0056b3; }}
+    input, select {{ padding: 6px 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; vertical-align: middle; }}
+    th {{ background: #f3f3f3; position: sticky; top: 0; font-weight: 600; text-align: left; }}
+    .thumbnail {{ width: 80px; height: 60px; object-fit: cover; border-radius: 4px; display: block; }}
+    .thumbnail-link {{ display: block; text-decoration: none; }}
+    .thumbnail-link:hover .thumbnail {{ opacity: 0.8; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }}
+    .pill {{ padding: 3px 8px; border-radius: 12px; font-size: 11px; color: #333; font-weight: 500; display: inline-block; }}
+    .match_url_direct {{ background: #c3f0ca; color: #0d5e1e; }}
+    .match_exact {{ background: #dff6e7; color: #155724; }}
+    .match_phash {{ background: #fff6dd; color: #856404; }}
+    .unmatched {{ background: #fde8e8; color: #721c24; }}
+    .badge {{ padding: 2px 6px; background: #e0e0e0; border-radius: 3px; font-size: 10px; font-weight: 500; }}
     .badge-dam {{ background: #c3f0ca; color: #0d5e1e; }}
-    .badge-local {{ background: #fff6dd; }}
+    .badge-local {{ background: #fff6dd; color: #856404; }}
+    .page-urls {{ font-size: 11px; max-width: 300px; }}
+    .page-urls a {{ color: #007bff; text-decoration: none; }}
+    .page-urls a:hover {{ text-decoration: underline; }}
+    #count {{ font-size: 14px; color: #6c757d; margin-left: auto; }}
     .dashboard {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 16px 0; }}
     .metric-card {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; }}
     .metric-card h3 {{ margin: 0 0 8px 0; font-size: 14px; color: #6c757d; text-transform: uppercase; }}
@@ -163,28 +197,73 @@ def write_html(master_rows: list[dict], governance: dict, output: Path) -> None:
   </style>
 </head>
 <body>
-  <h2>Citizens vs DAM Audit</h2>
-  
-  <div class="dashboard">
-    <div class="metric-card success">
-      <h3>DAM Adoption</h3>
-      <div class="value">{adoption_rate}%</div>
-      <div class="label">{direct_dam} of {total_matched} using direct DAM URLs</div>
+  <div class="container">
+    <h1>📊 Citizens vs DAM Audit Report</h1>
+    
+    <h2>Summary</h2>
+    <div class="summary-grid">
+      <div class="summary-item primary" data-filter="all">
+        <span class="label">Total Citizens Images</span>
+        <span class="value">{total_images}</span>
+      </div>
+      <div class="summary-item success" data-filter="match_url_direct">
+        <span class="label">✅ Direct DAM URLs</span>
+        <span class="value">{matched_direct}</span>
+      </div>
+      <div class="summary-item success" data-filter="match_exact">
+        <span class="label">✅ Matched (Exact)</span>
+        <span class="value">{matched_exact}</span>
+      </div>
+      <div class="summary-item warning" data-filter="match_phash">
+        <span class="label">⚠️ Matched (Similar)</span>
+        <span class="value">{matched_phash}</span>
+      </div>
+      <div class="summary-item danger" data-filter="unmatched">
+        <span class="label">❌ Unmatched</span>
+        <span class="value">{unmatched}</span>
+      </div>
+      <div class="summary-item danger" data-filter="needs_upload">
+        <span class="label">📤 Needs DAM Upload</span>
+        <span class="value">{needs_upload}</span>
+      </div>
+      <div class="summary-item info" data-filter="dam_exact_dupes">
+        <span class="label">🔄 DAM Duplicates (Exact)</span>
+        <span class="value">{dam_exact_dupes}</span>
+      </div>
+      <div class="summary-item info" data-filter="dam_phash_dupes">
+        <span class="label">🔄 DAM Duplicates (Similar)</span>
+        <span class="value">{dam_phash_dupes}</span>
+      </div>
+      <div class="summary-item info" data-filter="citizens_dupes">
+        <span class="label">🔄 Citizens Duplicates</span>
+        <span class="value">{citizens_dupes}</span>
+      </div>
     </div>
-    <div class="metric-card warning">
-      <h3>Local Copies</h3>
-      <div class="value">{local_copies}</div>
-      <div class="label">Images downloaded instead of direct DAM links</div>
+    
+    <h2>Governance Metrics</h2>
+    <div class="dashboard">
+      <div class="metric-card success">
+        <h3>DAM Adoption</h3>
+        <div class="value">{adoption_rate}%</div>
+        <div class="label">{direct_dam} of {total_matched} using direct DAM URLs</div>
+      </div>
+      <div class="metric-card warning">
+        <h3>Local Copies</h3>
+        <div class="value">{local_copies}</div>
+        <div class="label">Images downloaded instead of direct DAM links</div>
+      </div>
+      <div class="metric-card info">
+        <h3>Duplicate Groups</h3>
+        <div class="value">{dupe_groups}</div>
+        <div class="label">{dupe_urls} duplicate URLs found</div>
+      </div>
     </div>
-    <div class="metric-card info">
-      <h3>Duplicate Groups</h3>
-      <div class="value">{dupe_groups}</div>
-      <div class="label">{dupe_urls} duplicate URLs found</div>
-    </div>
-  </div>
-  <div class=\"controls\">
-    <input id=\"q\" placeholder=\"Search image URL or DAM item\" style=\"min-width:320px\" />
-    <select id=\"status\">
+    
+    <h2>Image Details</h2>
+    <div class=\"controls\">
+      <button id=\"clearFilters\">Clear All Filters</button>
+      <input id=\"q\" placeholder=\"Search image URL or DAM item\" style=\"min-width:320px\" />
+      <select id=\"status\">
       <option value=\"\">All statuses</option>
       <option value=\"match_url_direct\">match_url_direct (Direct DAM)</option>
       <option value=\"match_exact\">match_exact</option>
@@ -198,27 +277,28 @@ def write_html(master_rows: list[dict], governance: dict, output: Path) -> None:
       <option value=\"local_copy\">Local Copies</option>
     </select>
     <label><input type=\"checkbox\" id=\"needs\" /> Needs DAM Upload only</label>
-  </div>
-  <div id=\"count\"></div>
-  <table>
-    <thead>
-      <tr>
-        <th>image_url</th>
-        <th>status</th>
-        <th>URL Type</th>
-        <th>dam_item_id</th>
-        <th>dam_file_name</th>
-        <th>phash_distance</th>
-        <th>page_count</th>
-        <th>page_urls</th>
-      </tr>
-    </thead>
-    <tbody id=\"rows\"></tbody>
-  </table>
+      <div id=\"count\"></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Preview</th>
+          <th>Image URL</th>
+          <th>Status</th>
+          <th>URL Type</th>
+          <th>DAM Item ID</th>
+          <th>DAM File Name</th>
+          <th>pHash Dist</th>
+          <th>Pages</th>
+          <th>Page URLs</th>
+        </tr>
+      </thead>
+      <tbody id=\"rows\"></tbody>
+    </table>
   <script src=\"report.js\"></script>
   <script>
     // Initialize report with data
-    initializeReport({payload});
+    initializeReport({payload}, {summary_payload});
   </script>
 </body>
 </html>"""
@@ -303,7 +383,7 @@ def main() -> None:
     
     emit_progress(4, total_steps, "Generating HTML dashboard...")
     html_out = REPORTS_DIR / "audit_report.html"
-    write_html(master_rows, governance, html_out)
+    write_html(master_rows, summary, governance, html_out)
     
     emit_progress(5, total_steps, "Finalizing reports...")
     emit_progress(6, total_steps, "Report generation complete")
