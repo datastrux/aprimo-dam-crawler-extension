@@ -25,26 +25,29 @@
 
   // Expiration Notification Configuration (SharePoint-ready)
   const EXPIRATION_CONFIG = {
-    enabled: false,  // Enable to check for expiring assets
+    enabled: true,  // Enable to check for expiring assets
     warningDays: 30,  // Warn when assets expire within this many days
     checkOnStartup: true,  // Check for expiring assets on extension startup
+    checkIntervalMinutes: 360,  // Check every 6 hours (daily in practice)
     // SharePoint notification settings (for future implementation)
     sharepoint: {
-      enabled: false,  // Enable SharePoint notifications
-      notificationList: '',  // e.g., 'https://company.sharepoint.com/sites/DAM/Lists/ExpirationNotifications'
-      emailRecipients: [],  // e.g., ['imagemanager@company.com']
-      teamsWebhook: '',  // Optional Teams webhook URL
+      enabled: true,  // Enable SharePoint notifications
+      notificationList: 'https://company.sharepoint.com/sites/DAM/Lists/ExpirationNotifications',  // TODO: Configure actual URL
+      emailRecipients: ['dam_admin@company.com'],  // TODO: Configure actual recipients
+      teamsWebhook: '',  // Optional Teams webhook URL (configure if using Teams)
       authToken: null  // Set via environment or secure storage
     }
   };
 
   // Auto-Collection Configuration (collect URLs while browsing citizensbank.com)
   const AUTO_COLLECTION_CONFIG = {
-    enabled: false,  // Enable to automatically collect URLs and images while browsing
+    enabled: true,  // Enable to automatically collect URLs and images while browsing
     collectPageUrls: true,  // Auto-add page URLs to collection list
     collectImageSrcs: true,  // Auto-collect image sources from pages
     stripQueryParams: true,  // Remove query params for unique URL list
-    storageKey: 'damAudit_autoCollected_v1'
+    storageKey: 'damAudit_autoCollected_v1',
+    complianceCheck: true,  // Check if images are using DAM URLs vs local copies
+    notifyNonCompliance: false  // Show console warnings for non-DAM URLs (set true for debugging)
   };
 
   const runtime = {
@@ -984,6 +987,7 @@
     // Find all images on page
     const images = document.querySelectorAll('img[src]');
     const imageSrcs = [];
+    const complianceIssues = [];
     
     for (const img of images) {
       let src = img.src;
@@ -997,13 +1001,39 @@
       }
       
       imageSrcs.push(src);
+      
+      // Compliance check: Is this using DAM URL or local copy?
+      if (AUTO_COLLECTION_CONFIG.complianceCheck) {
+        const isDamUrl = /p1\.aprimocdn\.net\/citizensbank\//.test(src) || 
+                        /www\.citizensbank\.com\/dam\//.test(src);
+        
+        if (!isDamUrl && !src.includes('data:') && !src.includes('blob:')) {
+          complianceIssues.push({
+            pageUrl: currentUrl,
+            imageUrl: src,
+            imageAlt: img.alt || '',
+            imageWidth: img.width,
+            imageHeight: img.height,
+            detectedAt: nowIso()
+          });
+          
+          if (AUTO_COLLECTION_CONFIG.notifyNonCompliance) {
+            console.warn('[Compliance] Non-DAM URL detected:', src);
+          }
+        }
+      }
     }
     
     if (!imageSrcs.length) return;
     
     // Get existing collection from storage
     const stored = await chrome.storage.local.get(AUTO_COLLECTION_CONFIG.storageKey);
-    const collection = stored[AUTO_COLLECTION_CONFIG.storageKey] || { pageUrls: [], imageSrcs: [], lastUpdated: null };
+    const collection = stored[AUTO_COLLECTION_CONFIG.storageKey] || { 
+      pageUrls: [], 
+      imageSrcs: [], 
+      complianceIssues: [],
+      lastUpdated: null 
+    };
     
     // Add new image sources (deduplicate)
     let addedCount = 0;
@@ -1014,10 +1044,21 @@
       }
     }
     
-    if (addedCount > 0) {
+    // Add compliance issues (deduplicate by imageUrl)
+    if (complianceIssues.length > 0) {
+      const existingUrls = new Set((collection.complianceIssues || []).map(i => i.imageUrl));
+      for (const issue of complianceIssues) {
+        if (!existingUrls.has(issue.imageUrl)) {
+          collection.complianceIssues = collection.complianceIssues || [];
+          collection.complianceIssues.push(issue);
+        }
+      }
+    }
+    
+    if (addedCount > 0 || complianceIssues.length > 0) {
       collection.lastUpdated = nowIso();
       await chrome.storage.local.set({ [AUTO_COLLECTION_CONFIG.storageKey]: collection });
-      console.log(`[Auto-Collect] Added ${addedCount} image sources`);
+      console.log(`[Auto-Collect] Added ${addedCount} image sources, ${complianceIssues.length} compliance issues`);
     }
   }
 
@@ -1443,6 +1484,21 @@
           case 'DAM_CRAWLER_RESET':
             await resetState();
             sendResponse({ ok: true });
+            return;
+          case 'GOVERNANCE_CHECK_EXPIRATIONS':
+            {
+              // Run expiration check and post to SharePoint
+              const expiringData = getExpiringAssets();
+              const notification = buildExpirationNotification(expiringData);
+              
+              // Only send if SharePoint is enabled
+              if (EXPIRATION_CONFIG.sharepoint.enabled) {
+                await sendExpirationNotification(notification);
+                sendResponse({ ok: true, ...notification, posted: true });
+              } else {
+                sendResponse({ ok: true, ...notification, posted: false });
+              }
+            }
             return;
           default:
             sendResponse({ ok: false, error: 'Unknown command' });

@@ -1,6 +1,7 @@
 // Background worker for downloads and native-host audit orchestration.
 
 import { encryptedStorage } from './encrypted_storage.js';
+import { governance } from './governance.js';
 
 const AUDIT_NATIVE_HOST = 'com.datastrux.dam_audit_host';
 const AUDIT_STAGES = [
@@ -63,6 +64,59 @@ let auditSecretKey = null;
     console.error('[Worker] Failed to load HMAC secret:', err);
   }
 })();
+
+// ============================================================================
+// Governance: Expiration Monitoring Setup
+// ============================================================================
+
+const GOVERNANCE_ALARMS = {
+  EXPIRATION_CHECK: 'damGovernance_expirationCheck'
+};
+
+/**
+ * Set up periodic expiration monitoring alarm
+ */
+async function setupExpirationMonitoring() {
+  // Create alarm for periodic checks (every 6 hours)
+  await chrome.alarms.create(GOVERNANCE_ALARMS.EXPIRATION_CHECK, {
+    periodInMinutes: governance.config.expiration.checkIntervalMinutes
+  });
+  
+  console.log('[Worker] Expiration monitoring alarm created (every 6 hours)');
+}
+
+/**
+ * Handle alarm triggers
+ */
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === GOVERNANCE_ALARMS.EXPIRATION_CHECK) {
+    console.log('[Worker] Running scheduled expiration check...');
+    
+    // Get assets from IndexedDB (need to query content script)
+    // For now, we'll trigger via message to active tab
+    const tabs = await chrome.tabs.query({ url: 'https://*.aprimo.com/*' });
+    
+    if (tabs.length > 0) {
+      try {
+        const response = await chrome.tabs.sendMessage(tabs[0].id, { 
+          type: 'GOVERNANCE_CHECK_EXPIRATIONS' 
+        });
+        
+        console.log('[Worker] Expiration check result:', response);
+      } catch (err) {
+        console.log('[Worker] No active DAM tab for expiration check, skipping');
+      }
+    }
+  }
+});
+
+// Initialize governance features on worker startup
+setupExpirationMonitoring();
+
+// ============================================================================
+// Audit Pipeline Management
+// ============================================================================
+
 
 /**
  * Helper function to store audit secret from console
@@ -537,6 +591,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg?.type === 'DAM_AUDIT_CLEAR_LOGS') {
         auditRuntime.logs = [];
         sendResponse({ ok: true });
+        return;
+      }
+
+      // Governance actions
+      if (msg?.type === 'GOVERNANCE_CHECK_EXPIRATIONS') {
+        // Forward to content script in active DAM tab
+        const tabs = await chrome.tabs.query({ url: 'https://*.aprimo.com/*' });
+        if (tabs.length > 0) {
+          const response = await chrome.tabs.sendMessage(tabs[0].id, msg);
+          sendResponse(response);
+        } else {
+          sendResponse({ ok: false, error: 'No active DAM tab' });
+        }
+        return;
+      }
+
+      if (msg?.type === 'GOVERNANCE_STORE_SHAREPOINT_TOKEN') {
+        const result = await globalThis.storeSharePointToken(msg.token);
+        sendResponse({ ok: result });
+        return;
+      }
+
+      if (msg?.type === 'GOVERNANCE_CHECK_SHAREPOINT_TOKEN') {
+        const result = await globalThis.checkSharePointToken();
+        sendResponse({ ok: result });
         return;
       }
 
