@@ -40,6 +40,7 @@ assets/audit/*_fingerprints.json
 assets/audit/match_results.json
 assets/audit/unmatched_results.json
 assets/audit/*_duplicates.json
+assets/audit/*_dupes.json
 assets/audit/citizens_pages.json
 assets/audit/citizens_images.json
 assets/audit/citizens_images_index.json
